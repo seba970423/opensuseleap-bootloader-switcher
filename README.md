@@ -1,4 +1,4 @@
-# openSUSE Bootloader Switcher
+# openSUSE 16.X Bootloader Switcher
 
 Transactional bootloader migration and backup restoration for **openSUSE Leap 16.x**.
 
