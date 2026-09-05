@@ -1,0 +1,68 @@
+openSUSE Bootloader Switcher — leap16-r83 local test report
+Date: 2026-09-05
+
+Hardware evidence consumed
+--------------------------
+Observed after the r82 retry:
+  BootCurrent: 0000 (canonical Limine)
+  BootOrder:   0000,0001 (Limine,rEFInd)
+  no fallback alias present
+  cachyos-bootloader-switcher-resume.service absent
+  no current-boot journal entries for that unit
+
+Conclusion: proof #2 was not earned. The system is back at the safe proof-#1
+checkpoint with rEFInd intact.
+
+Root cause reproduced
+---------------------
+r82's leap16_r64_create_or_adopt_limine_fallback_alias() called
+r28_create_alias_create_only() from inside command substitution. The r28 helper
+prints an [OK] status line on stdout and then the r64 wrapper prints the Boot ID.
+The caller therefore captured two lines instead of exactly "0002".
+
+Direct r82 reproduction:
+  r82 captured stdout=<[OK] Created parked Boot0002 noisy-status
+  0002>
+
+The following metadata gate requires ^[0-9A-F]{4}$, so it rejected that polluted
+value and the existing fail-closed rollback removed the newly-created fallback
+alias, restored EFI/BOOT + limine.conf, and restored Limine,rEFInd ordering.
+That precisely matches the hardware-observed post-retry state.
+
+r83 change
+----------
+Only the r64 fallback-alias wrapper is overridden. r28 human status output is
+redirected to stderr; stdout returns only the exact Boot#### ID. A four-hex-digit
+ID check remains before the value is used.
+
+No runtime proof, ownership, rollback, source-retirement, fallback-proof, or
+bounded firmware-alias rule is weakened.
+
+Tests
+-----
+PASS  leap16-r83 focused selftest
+      - exact noisy-stdout reproduction
+      - existing-alias ownership path
+      - full fallback promotion with the real r83 wrapper
+      - metadata receives clean Boot0002 ID
+      - final mocked topology reaches 0000,0002,0001 with BootNext=0002
+      - r82 dedicated Limine,rEFInd promotion-order repair remains effective
+
+PASS  direct reproduction of the r82 stdout-contamination bug
+PASS  shell syntax sweep: 169 shell files
+PASS  adapted r82 promotion-order regression against the r83 effective stack
+PASS  adapted r81 recovery/diagnostic regression against the r83 effective stack
+PASS  adapted r80 regression against the r83 effective stack
+
+NOTE  tests/selftest.sh reaches an inherited historical "release archaeology"
+      assertion in the r25 section because old leap16_r22/r23/r24 user-visible
+      strings still contain their revision names. Those strings are already
+      present in r82 and are unrelated to the r83 boot-path change. The suite
+      passes all checks up to that pre-existing assertion.
+
+Hardware status
+---------------
+rEFInd -> Limine canonical proof #1: HW-PROVEN (r81)
+rEFInd -> Limine EFI/BOOT proof #2: HW-PENDING
+rEFInd retirement after proof #2:   HW-PENDING
+Limine <-> rEFInd restore edges:    HW-PENDING

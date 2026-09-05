@@ -1,0 +1,59 @@
+openSUSE Bootloader Switcher — leap16-r81 local test report
+
+INPUTS
+  opensuse-bootloader-switcher-r80.tar(3).gz
+  context diagnosis.tar(1).gz
+
+RESULTS
+  Bash parse checks: PASS, 165 scripts.
+  r81 focused effective-stack selftest: PASS.
+  Unmodified r80 selftest against original r80: PASS.
+  r80 regression against effective r81 stack: PASS.
+  r79 GRUB parked-direct/ownership regression against effective r81: PASS.
+
+Historical r79/r80 scripts pin an exact release string. Compatibility runs
+adapted only that release assertion and the runner's ROOT location. Behavioral
+assertions, function bodies, inputs and expected mutation traces were unchanged.
+The original historical test files remain unchanged in the archive.
+
+FOCUSED COVERAGE
+  - Reproduced r80's nonexistent EFI/BOOT candidate recovery path before fixing it.
+  - Live/generated and restored/finalized menus become direct rEFInd recovery.
+  - Restored backup input bytes remain immutable.
+  - Missing fallback is legitimate before transfer; unexpected appearance fails.
+  - Existing pre-stage fallback must preserve its exact recorded hash.
+  - Tampered rEFInd source bytes and duplicate recovery stanzas fail.
+  - Pending primary/transfer validation uses fresh metadata, not staging globals.
+  - The exact primary recovery config is snapshotted at fallback transfer.
+  - Final menu keeps the visible standard EFI fallback and drops temporary recovery.
+  - Primary BootCurrent cannot satisfy final fallback acceptance.
+  - Failed second proof prevents live AND restore finalizer mutations.
+  - Replayed supplied r80 before/staged/final firmware captures.
+  - Final reporting survives private snapshot removal but rejects another transaction's cache.
+  - Retired source residue, wrong ESP, empty baseline and parked fallback duplicates fail reporting.
+  - Reverse candidate/transfer/final firmware reporting is direction- and phase-aware.
+  - rEFInd runtime evidence is routed into the Leap collector.
+  - One same-ID alias re-synthesis wave converges in two passes.
+  - Continued churn is bounded; failed deletion, enumeration, baseline collisions,
+    and identity changes after BootOrder writes fail closed.
+  - Hardware matrix records the observed live proof separately from restore evidence.
+
+CLI / ENVIRONMENT
+  Effective --matrix printer and release metadata: PASS (r81 selftest).
+  Full script execution on this non-Leap container was correctly rejected by
+  the existing 'openSUSE Leap 16.x only' platform gate. The gate was not changed.
+  ShellCheck is not installed; no ShellCheck result is claimed.
+  No runtime dependency was added.
+
+LIMITS
+  No physical EFI-variable write, live switch, reboot or restore was performed
+  here. r81's corrected reverse path and each restore direction still require
+  their own complete hardware transaction logs. Tests are not hardware proof.
+
+RAW SUITE RESULTS
+
+leap16-r81 selftest: PASS
+
+leap16-r79 selftest: PASS
+
+leap16-r80 selftest: PASS

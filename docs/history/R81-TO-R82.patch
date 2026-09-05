@@ -1,0 +1,369 @@
+diff -ruN '--exclude=R81-TO-R82.patch' ./R82-REFIND-LIMINE-PROMOTION.md /mnt/data/opensuse-bootloader-switcher-r82/R82-REFIND-LIMINE-PROMOTION.md
+--- ./R82-REFIND-LIMINE-PROMOTION.md	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/opensuse-bootloader-switcher-r82/R82-REFIND-LIMINE-PROMOTION.md	2026-09-05 19:17:31.622848630 +0000
+@@ -0,0 +1,59 @@
++# r82 — rEFInd → Limine promotion-order repair
++
++## Hardware evidence from `20260905-2.tar.gz`
++
++The r81 run successfully staged canonical Limine from rEFInd, booted Limine via
++BootNext, and passed the full primary runtime/deep validation twice. At the last
++captured checkpoint (`20260905-221258-runtime-pass-limine-from-refind`):
++
++- `BootCurrent: 0000` = canonical `\\EFI\\LIMINE\\LIMINE_X64.EFI`.
++- `BootOrder: 0001,0000` still kept rEFInd persistent-first before promotion.
++- canonical rEFInd `Boot0001` and its source bytes were intact and deep-validated.
++- `EFI/BOOT/BOOTX64.EFI` was still absent.
++- no Limine fallback Boot#### alias existed.
++- pending phase was already `runtime-validated`.
++
++The automatic resume then failed at:
++
++`[FAIL] Canonical Limine/rEFInd promoted recovery topology is not exact`
++
++No fallback transfer or rEFInd retirement was attempted after that failure.
++
++## Root cause
++
++`leap16_r64_promote_and_stage_limine_fallback()` reused
++`adapter_target_promote(target, source)`. That helper is intentionally a
++single-proof promotion helper: it writes the target first **while omitting the
++source ID from BootOrder**. The rEFInd → Limine edge is different: rEFInd must
++remain exact persistent recovery until a second, independent boot from the
++byte-identical Limine `EFI/BOOT/BOOTX64.EFI` succeeds.
++
++This is the same semantic class already repaired for systemd-boot → Limine in
++r54, which uses `r21_order_primary_then_source_recovery()` rather than the
++generic adapter promotion helper.
++
++## r82 change
++
++r82 reproduces only the r64 fallback-staging function and changes the promotion
++step to:
++
++1. re-run all existing pending/runtime/deep/ownership gates;
++2. call `r21_order_primary_then_source_recovery()`;
++3. require exact `target,source` as the first two BootOrder IDs;
++4. only then snapshot the primary manifest, transfer EFI/BOOT, create/adopt the
++   fallback alias, verify byte identity, and arm fallback BootNext.
++
++No source-retirement, fallback-proof, alias-normalization, restore provenance,
++menu-finalization, or diagnostic gate is weakened.
++
++## Recovery of the r81 stranded state
++
++No manual NVRAM cleanup is required or accepted. If r81's generic promotion
++write left BootOrder with only canonical Limine first, r82 accepts that state
++only after the existing primary Limine runtime proof and exact passive rEFInd
++source checks pass. It then reconstructs `Limine,rEFInd` using the dedicated
++ordering helper before any fallback transfer.
++
++The user can continue the existing `runtime-validated` transaction through the
++normal pending-management path. A fresh second hardware proof is still required
++before rEFInd can be retired or the edge can become HW-PROVEN.
+diff -ruN '--exclude=R81-TO-R82.patch' ./R82-TEST-REPORT.txt /mnt/data/opensuse-bootloader-switcher-r82/R82-TEST-REPORT.txt
+--- ./R82-TEST-REPORT.txt	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/opensuse-bootloader-switcher-r82/R82-TEST-REPORT.txt	2026-09-05 19:19:56.666417762 +0000
+@@ -0,0 +1,63 @@
++openSUSE Bootloader Switcher — leap16-r82 local test report
++
++INPUTS
++  opensuse-bootloader-switcher-r81.tar(1).gz
++  20260905-2.tar.gz
++
++HARDWARE DIAGNOSIS REPLAYED
++  - r81 canonical Limine Boot0000 runtime proof: PASS.
++  - rEFInd Boot0001 passive recovery/deep validation: PASS.
++  - last captured pre-promotion BootOrder: 0001,0000.
++  - EFI/BOOT/BOOTX64.EFI at last checkpoint: ABSENT.
++  - Limine fallback Boot#### alias at last checkpoint: ABSENT.
++  - pending phase: runtime-validated.
++  - r81 automatic resume failure reproduced in code review at the exact
++    source-dropping generic promotion call before fallback transfer.
++
++R82 CHANGE
++  leap16_r64_promote_and_stage_limine_fallback() now uses
++  r21_order_primary_then_source_recovery() and requires exact target,source
++  before any EFI/BOOT transfer. The rest of the r81/r80 two-proof and
++  ownership-gated finalization stack is unchanged.
++
++RESULTS
++  Bash parse checks: PASS, 167 scripts.
++  r82 focused effective-stack selftest: PASS.
++  r81 behavioral regression against effective r82 stack: PASS.
++  r80 ownership/alias regression against effective r82 stack: PASS.
++  r79 parked-direct/ownership regression against effective r82 stack: PASS.
++
++FOCUSED R82 COVERAGE
++  - Effective reverse promotion function contains the dedicated
++    primary+source recovery helper and no adapter_target_promote call.
++  - Starting BootOrder 0001,0000 converges to 0000,0001 before fallback write.
++  - Exact plausible r81 stranded BootOrder 0000 also converges to 0000,0001
++    before fallback write.
++  - Fallback transfer/alias/order/BootNext simulation reaches
++    0000,0002,0001 with BootNext=0002.
++  - Failed primary/source runtime validation performs zero ordering writes.
++  - Reverse live/restore matrix entries remain HW-PENDING; local simulation
++    cannot certify the independent fallback proof or either restore direction.
++
++REGRESSION NOTE
++  tests/selftest.sh was also started against r82. Its generic historical suite
++  passed through the inherited r25 blocks, then intentionally stopped on a
++  revision-pinned user-visible release audit that expects an old r25-era main
++  script. That static historical assertion is not modified or counted as an
++  r82 behavioral failure. Revision-specific r79/r80/r81 compatibility runners
++  were instead executed with only their exact release-string assertions adapted;
++  their behavioral bodies and expectations were unchanged.
++
++HARDWARE STATUS
++  Limine -> rEFInd live remains HW-PROVEN from the earlier Sep 5 transaction.
++  rEFInd -> Limine has proof #1 only; proof #2 was never armed by r81.
++  Limine <-> rEFInd restore directions remain HW-PENDING.
++  GRUB2 <-> rEFInd live and both restore directions remain HW-PROVEN per the
++  existing handoff/evidence ledger.
++
++NEXT HARDWARE ACTION
++  Use r82 against the existing pending transaction. From canonical Limine,
++  --manage-staged should show runtime-validated rEFInd -> Limine with no fallback
++  staged. Choose the normal "Promote Limine + stage EFI/BOOT proof #2" action.
++  r82 must first establish BootOrder target,source, then arm the fallback proof.
++  No manual BootOrder/BootNext/EFI cleanup is part of the accepted path.
+diff -ruN '--exclude=R81-TO-R82.patch' ./README.md /mnt/data/opensuse-bootloader-switcher-r82/README.md
+--- ./README.md	2026-09-05 18:56:46.000000000 +0000
++++ /mnt/data/opensuse-bootloader-switcher-r82/README.md	2026-09-05 19:19:56.536373642 +0000
+@@ -1,10 +1,10 @@
+-# openSUSE Bootloader Switcher — leap16-r81
++# openSUSE Bootloader Switcher — leap16-r82
+ 
+-**leap16-r81:** fixes the r80 rEFInd → Limine pre-commit failure: the Limine candidate now points recovery directly at canonical rEFInd, whose finalized topology deliberately has no generic EFI/BOOT fallback. A direction-aware validator checks unchanged pre-transfer fallback bytes/absence, then byte-identical Limine fallback ownership. Only the existing independent second boot proof permits the temporary rEFInd entry to become the visible final EFI fallback menu item. Live and validated backup restores share these gates.
++**leap16-r82:** repairs the hardware-exposed rEFInd → Limine promotion-order bug after r81 successfully earned canonical Limine proof #1. The reverse edge now uses the dedicated two-proof `Limine,rEFInd` persistent ordering helper instead of the generic target promotion helper that intentionally drops the source from `BootOrder`. This is performed only after the existing canonical-Limine runtime, cmdline, deep target, immutable ownership and passive-rEFInd recovery gates pass.
+ 
+-The Limine/rEFInd pair's runtime checkpoints now use the openSUSE diagnostic bundle, include rEFInd configuration/PreviousBoot evidence, and retain a transaction-bound reporting baseline after private snapshot cleanup. Final firmware reports expect source retirement instead of reporting the missing retired source as a failure. Alias normalization allows one re-synthesis wave through at most two passes at each boundary; ownership collisions, enumeration errors and failed deletions remain fatal.
++The r81 recovery-menu, diagnostics and bounded alias-normalization hardening remains unchanged. r82 also resumes the exact r81 stranded `runtime-validated` state without manual NVRAM cleanup: it reconstructs `Limine,rEFInd` first, and only then may it transfer byte-identical Limine into `EFI/BOOT`, create/adopt the fallback alias and arm the independent second BootNext proof. rEFInd retirement still requires that second proof.
+ 
+-See [R81-LIMINE-REFIND-RECOVERY.md](R81-LIMINE-REFIND-RECOVERY.md) for the diagnosis, evidence ledger and hardware retest. Run `bash tests/leap16-r81-selftest.sh` for the focused regression suite. Historical revision notes follow below.
++See [R82-REFIND-LIMINE-PROMOTION.md](R82-REFIND-LIMINE-PROMOTION.md) for the new hardware diagnosis and [R81-LIMINE-REFIND-RECOVERY.md](R81-LIMINE-REFIND-RECOVERY.md) for the preceding recovery/diagnostic repair. Run `bash tests/leap16-r82-selftest.sh` for the focused regression suite. Historical revision notes follow below.
+ 
+ # openSUSE Bootloader Switcher — leap16-r78
+ 
+diff -ruN '--exclude=R81-TO-R82.patch' ./bootloader-switcher.sh /mnt/data/opensuse-bootloader-switcher-r82/bootloader-switcher.sh
+--- ./bootloader-switcher.sh	2026-09-05 18:55:07.000000000 +0000
++++ /mnt/data/opensuse-bootloader-switcher-r82/bootloader-switcher.sh	2026-09-05 19:17:31.488655759 +0000
+@@ -2,7 +2,7 @@
+ set -u
+ 
+ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+-SWITCHER_RELEASE="leap16-r81"
++SWITCHER_RELEASE="leap16-r82"
+ source "$SCRIPT_DIR/lib/common.sh"
+ source "$SCRIPT_DIR/lib/storage.sh"
+ source "$SCRIPT_DIR/lib/detect.sh"
+@@ -115,6 +115,7 @@
+ source "$SCRIPT_DIR/lib/leap16_r79.sh"
+ source "$SCRIPT_DIR/lib/leap16_r80.sh"
+ source "$SCRIPT_DIR/lib/leap16_r81.sh"
++source "$SCRIPT_DIR/lib/leap16_r82.sh"
+ 
+ select_target_bootloader() {
+     local choice target current_name
+@@ -257,7 +258,7 @@
+         cat <<'HELP'
+ Usage: ./bootloader-switcher.sh [OPTION]
+ 
+-openSUSE Leap 16 r81 — Limine ↔ rEFInd recovery-menu and diagnostic repair.
++openSUSE Leap 16 r82 — rEFInd -> Limine two-proof promotion-order repair.
+ 
+ Without options, opens the preserved nine-selector menu.
+ 
+@@ -272,7 +273,9 @@
+   --matrix          print implemented vs hardware-proven live/restore matrices
+   --help            show this help
+ 
+-R81 WRITE CONTRACT:
++R82 WRITE CONTRACT:
++  - rEFInd -> Limine promotion keeps exact rEFInd second in BootOrder until the independent Limine EFI/BOOT proof
++  - an r81 runtime-validated stranded topology is healed only after the existing Limine runtime and passive-rEFInd ownership gates pass
+   - rEFInd -> Limine stages direct canonical rEFInd recovery from the start, even when EFI/BOOT is absent
+   - after the independent Limine fallback boot proof, the temporary recovery stanza becomes the visible EFI fallback menu item
+   - each alias normalization boundary allows at most two passes; continued churn, changed ownership or failed deletion stops finalization
+diff -ruN '--exclude=R81-TO-R82.patch' ./lib/leap16_r82.sh /mnt/data/opensuse-bootloader-switcher-r82/lib/leap16_r82.sh
+--- ./lib/leap16_r82.sh	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/opensuse-bootloader-switcher-r82/lib/leap16_r82.sh	2026-09-05 19:17:31.037541073 +0000
+@@ -0,0 +1,83 @@
++#!/usr/bin/env bash
++# leap16-r82: repair rEFInd -> Limine promotion ordering exposed by the
++# 2026-09-05 r81 hardware run. The generic adapter promotion helper removes
++# the source from BootOrder, but this two-proof edge must keep exact rEFInd
++# recovery second until the independent EFI/BOOT Limine proof succeeds.
++
++# r81's hardware run reached a runtime-validated canonical Limine session with
++# intact passive rEFInd recovery, then stopped before EFI/BOOT transfer because
++# leap16_r64_promote_and_stage_limine_fallback() called adapter_target_promote().
++# Reproduce that function with one semantic change: establish the dedicated
++# primary+source recovery order used by the already-proven two-proof Limine
++# paths. This also self-heals the exact r81 stranded state (e.g. BootOrder only
++# containing the target) after all existing runtime/source ownership gates pass.
++leap16_r64_promote_and_stage_limine_fallback() {
++    local source=${PENDING_OLD_BOOT_ID^^} target=${PENDING_TARGET_BOOT_ID^^} order conf_hash fallback_hash fallback_id before next pm
++    validate_pending_compatibility || return 1
++    [[ $PENDING_PHASE == runtime-validated ]] || return 1
++    detect_bootloader; [[ $BOOTLOADER == limine && ${BOOT_CURRENT^^} == "$target" ]] || return 1
++    leap16_r64_validate_limine_primary_runtime || return 1
++
++    r21_order_primary_then_source_recovery \
++        || { fail 'Could not establish canonical Limine + rEFInd recovery ordering before fallback transfer'; return 1; }
++    [[ $(leap16_current_boot_order | cut -d, -f1,2) == "$target,$source" ]] \
++        || { fail 'Canonical Limine/rEFInd promoted recovery topology is not exact'; return 1; }
++    ok "Canonical Limine Boot$target is first and exact rEFInd recovery Boot$source remains second"
++
++    pm=$(leap16_r64_limine_primary_manifest_path); cp -f -- "$PENDING_TARGET_MANIFEST" "$pm" || return 1; chmod 600 -- "$pm" 2>/dev/null || true
++    conf_hash=$(leap16_r64_rewrite_limine_recovery_to_refind) || return 1
++    if ! r21_atomic_replace "$PENDING_TARGET_EFI_RESOLVED" "$PENDING_OLD_FALLBACK_PATH" "$PENDING_TARGET_EFI_HASH"; then leap16_r64_restore_pre_limine_fallback_state || true; return 1; fi
++    fallback_hash=$(r21_hash_privileged "$PENDING_OLD_FALLBACK_PATH"); [[ $fallback_hash == "$PENDING_TARGET_EFI_HASH" ]] || { leap16_r64_restore_pre_limine_fallback_state || true; return 1; }
++    fallback_id=$(leap16_r64_create_or_adopt_limine_fallback_alias) || { leap16_r64_restore_pre_limine_fallback_state || true; return 1; }; fallback_id=${fallback_id^^}
++    leap16_r64_refresh_limine_manifest || { leap16_r64_restore_pre_limine_fallback_state || true; return 1; }
++    leap16_r64_update_limine_fallback_meta "$fallback_id" "$fallback_hash" "$conf_hash" || { leap16_r64_restore_pre_limine_fallback_state || true; return 1; }
++    order=$(r21_order_primary_fallback_then_existing "$fallback_id") || { leap16_r64_restore_pre_limine_fallback_state || true; return 1; }
++    leap16_r64_verify_transferred_limine || { leap16_r64_restore_pre_limine_fallback_state || true; return 1; }
++    before=$(leap16_current_boot_order); sudo efibootmgr -n "$fallback_id" >/dev/null || { leap16_r64_restore_pre_limine_fallback_state || true; return 1; }
++    next=$(pending_bootnext_id); [[ ${next^^} == "$fallback_id" && $(leap16_current_boot_order) == "$before" ]] || { leap16_r64_restore_pre_limine_fallback_state || true; fail 'Fallback BootNext arming failed or changed BootOrder'; return 1; }
++    pending_capture_runtime_diagnostics fallback-armed-limine-from-refind >/dev/null 2>&1 || true
++    printf '\nPRIMARY PROOF COMPLETE. Limine EFI/BOOT Boot%s is armed for proof #2; rEFInd Boot%s remains intact.\n' "$fallback_id" "$source"
++}
++
++leap16_r64_print_matrix() {
++    cat <<'MATRIX'
++openSUSE Leap 16 bootloader matrix — leap16-r82
++
++Legend:
++  HW-PROVEN       completed automatically on real hardware with exact final topology
++  HW-PENDING      implemented; complete hardware evidence still required
++  —               same-backend; not a cross-loader edge
++
++LIVE SWITCH MATRIX (source rows -> target columns)
++                 GRUB2        Limine       systemd-boot  rEFInd
++  GRUB2          —            HW-PROVEN    HW-PROVEN     HW-PROVEN
++  Limine         HW-PROVEN    —            HW-PROVEN     HW-PROVEN
++  systemd-boot   HW-PROVEN    HW-PROVEN    —             HW-PENDING
++  rEFInd         HW-PROVEN    HW-PENDING   HW-PENDING    —
++
++CROSS-LOADER RESTORE MATRIX (active source -> restored backup target)
++                 GRUB2        Limine       systemd-boot  rEFInd
++  GRUB2          —            HW-PROVEN    HW-PROVEN     HW-PROVEN
++  Limine         HW-PROVEN    —            HW-PROVEN     HW-PENDING
++  systemd-boot   HW-PROVEN    HW-PROVEN    —             HW-PENDING
++  rEFInd         HW-PROVEN    HW-PENDING   HW-PENDING    —
++
++BACKUP BACKENDS
++  GRUB2          HW-PROVEN
++  Limine         HW-PROVEN
++  systemd-boot   HW-PROVEN
++  rEFInd         HW-PROVEN
++
++r82 evidence scope:
++  - The Sep 5 r81 hardware run proves the canonical rEFInd -> Limine primary
++    BootNext/runtime proof, with exact passive rEFInd recovery still intact.
++  - r81 then failed before EFI/BOOT transfer because the generic promotion
++    helper dropped the source from the required two-entry recovery ordering.
++  - r82 replaces only that promotion step with the dedicated
++    primary+source-recovery ordering helper; the second proof and retirement
++    gates are unchanged and still require fresh hardware evidence.
++  - Limine -> rEFInd live remains HW-PROVEN from the earlier Sep 5 run.
++  - Neither Limine/rEFInd restore direction is promoted by local tests.
++  - GRUB2 <-> rEFInd live and both restores remain HW-PROVEN per the handoff.
++MATRIX
++}
+diff -ruN '--exclude=R81-TO-R82.patch' ./tests/leap16-r82-selftest.sh /mnt/data/opensuse-bootloader-switcher-r82/tests/leap16-r82-selftest.sh
+--- ./tests/leap16-r82-selftest.sh	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/opensuse-bootloader-switcher-r82/tests/leap16-r82-selftest.sh	2026-09-05 19:18:18.217514731 +0000
+@@ -0,0 +1,90 @@
++#!/usr/bin/env bash
++set -euo pipefail
++ROOT=${R82_TEST_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)}
++fail_test(){ printf 'FAIL: %s\n' "$*" >&2; exit 1; }
++source_effective_stack(){
++    local prelude
++    prelude=$(awk '/^select_target_bootloader\(\)/{exit} {print}' "$ROOT/bootloader-switcher.sh" | sed '/^SCRIPT_DIR=/d')
++    SCRIPT_DIR=$ROOT
++    eval "$prelude"
++}
++
++(
++    source_effective_stack
++    [[ $SWITCHER_RELEASE == leap16-r82 ]] || fail_test 'r82 release not loaded'
++    matrix=$(leap16_r64_print_matrix)
++    [[ $matrix == *'matrix — leap16-r82'* ]] || fail_test 'matrix heading is stale'
++    [[ $matrix == *'rEFInd         HW-PROVEN    HW-PENDING   HW-PENDING    —'* ]] \
++        || fail_test 'reverse Limine edge was incorrectly promoted to HW-PROVEN'
++    declare -f leap16_r64_promote_and_stage_limine_fallback | grep -Fq 'r21_order_primary_then_source_recovery' \
++        || fail_test 'dedicated primary+source recovery ordering is not wired'
++    ! declare -f leap16_r64_promote_and_stage_limine_fallback | grep -Fq 'adapter_target_promote' \
++        || fail_test 'generic source-dropping promotion helper remains in the effective reverse path'
++)
++
++# Reproduce both the pre-promotion r81 ordering (source,target) and the exact
++# plausible stranded state after the generic helper (target only). In either
++# case, r82 must restore target,source before any EFI/BOOT transfer is allowed.
++for start_order in 0001,0000 0000; do
++(
++    source_effective_stack
++    td=$(mktemp -d); trap 'rm -rf -- "$td"' EXIT
++    PENDING_SOURCE=refind; PENDING_TARGET=limine; PENDING_PHASE=runtime-validated
++    PENDING_OLD_BOOT_ID=0001; PENDING_TARGET_BOOT_ID=0000
++    PENDING_TARGET_MANIFEST="$td/target-owned.tsv"; printf owned >"$PENDING_TARGET_MANIFEST"
++    PENDING_TARGET_EFI_RESOLVED="$td/LIMINE_X64.EFI"; printf limine >"$PENDING_TARGET_EFI_RESOLVED"
++    PENDING_TARGET_EFI_HASH=$(printf 'a%.0s' {1..64})
++    PENDING_OLD_FALLBACK_PATH="$td/BOOTX64.EFI"
++    printf '%s\n' "$start_order" >"$td/order"; : >"$td/next"; : >"$td/trace"
++
++    mark(){ printf ' %s' "$1" >>"$td/trace"; }
++    validate_pending_compatibility(){ return 0; }
++    detect_bootloader(){ BOOTLOADER=limine; BOOT_CURRENT=0000; }
++    leap16_r64_validate_limine_primary_runtime(){ mark validated; return 0; }
++    leap16_current_boot_order(){ cat "$td/order"; }
++    r21_order_primary_then_source_recovery(){ mark ordered; printf '0000,0001\n' >"$td/order"; return 0; }
++    adapter_target_promote(){ fail_test 'generic promotion helper was called'; }
++    leap16_r64_limine_primary_manifest_path(){ printf '%s/primary-owned.tsv\n' "$td"; }
++    leap16_r64_rewrite_limine_recovery_to_refind(){ mark pretransfer; printf '%064d\n' 1; }
++    r21_atomic_replace(){ mark transfer; cp -- "$1" "$2"; return 0; }
++    r21_hash_privileged(){ [[ $1 == "$PENDING_OLD_FALLBACK_PATH" ]] && printf '%s\n' "$PENDING_TARGET_EFI_HASH" || command sha256sum -- "$1" | awk '{print $1}'; }
++    leap16_r64_create_or_adopt_limine_fallback_alias(){ mark alias; printf '0002\n'; }
++    leap16_r64_refresh_limine_manifest(){ mark manifest; return 0; }
++    leap16_r64_update_limine_fallback_meta(){ mark meta; return 0; }
++    r21_order_primary_fallback_then_existing(){ mark fallback-order; printf '0000,0002,0001\n' >"$td/order"; cat "$td/order"; }
++    leap16_r64_verify_transferred_limine(){ mark verify-transfer; [[ $(cat "$td/order") == 0000,0002,0001 ]]; }
++    sudo(){
++        if [[ ${1:-} == efibootmgr && ${2:-} == -n ]]; then printf '%s\n' "${3^^}" >"$td/next"; mark bootnext; return 0; fi
++        command "$@"
++    }
++    pending_bootnext_id(){ cat "$td/next"; }
++    pending_capture_runtime_diagnostics(){ mark diagnostics; printf '%s/diag\n' "$td"; }
++    leap16_r64_restore_pre_limine_fallback_state(){ fail_test 'valid promotion unexpectedly entered rollback'; }
++    ok(){ :; }; fail(){ printf 'FAILMSG: %s\n' "$*" >&2; }
++
++    leap16_r64_promote_and_stage_limine_fallback >/dev/null \
++        || fail_test "r82 could not promote from r81 ordering $start_order"
++    trace=$(cat "$td/trace")
++    [[ $trace == *' validated ordered pretransfer transfer'* ]] \
++        || fail_test "fallback transfer began before dedicated recovery ordering ($trace)"
++    [[ $(cat "$td/order") == 0000,0002,0001 && $(cat "$td/next") == 0002 ]] \
++        || fail_test "valid r82 fallback staging ended in wrong topology ($(cat "$td/order") / $(cat "$td/next"))"
++)
++done
++
++# Fail closed before the ordering write if the existing primary/source runtime
++# gate does not pass. This preserves the no-manual-repair contract.
++(
++    source_effective_stack
++    PENDING_SOURCE=refind; PENDING_TARGET=limine; PENDING_PHASE=runtime-validated
++    PENDING_OLD_BOOT_ID=0001; PENDING_TARGET_BOOT_ID=0000; MOCK_ORDER='0000'; writes=0
++    validate_pending_compatibility(){ return 0; }
++    detect_bootloader(){ BOOTLOADER=limine; BOOT_CURRENT=0000; }
++    leap16_r64_validate_limine_primary_runtime(){ return 1; }
++    r21_order_primary_then_source_recovery(){ writes=$((writes+1)); return 0; }
++    leap16_current_boot_order(){ printf '%s\n' "$MOCK_ORDER"; }
++    ! leap16_r64_promote_and_stage_limine_fallback || fail_test 'failed primary/source proof was accepted'
++    [[ $writes == 0 && $MOCK_ORDER == 0000 ]] || fail_test 'BootOrder mutated before primary/source proof'
++)
++
++printf 'leap16-r82 selftest: PASS\n'

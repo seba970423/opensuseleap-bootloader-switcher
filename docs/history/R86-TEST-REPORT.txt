@@ -1,0 +1,37 @@
+leap16-r86 focused regression report
+====================================
+
+PASS  exact r85 hardware pending state reproduced:
+      source rEFInd Boot0001 -> target systemd-boot Boot0000,
+      phase boot-armed, exact systemd target active, BootNext consumed.
+
+PASS  pre-r86 effective --manage-staged chain reproduces the historical failure:
+      "Current bootloader is neither the recorded GRUB2 source nor Limine target".
+
+PASS  r86 --manage-staged intercepts that same state and routes option [1]
+      to validate_pending_target_runtime(), i.e. the r85 systemd runtime validator.
+
+PASS  runtime-validated exact target session routes option [2] to the unchanged
+      r64 r26_finalize_adapter_transaction() dispatch.
+
+PASS  source-side candidate-ready state routes to the existing generic safe
+      arm + root-owned resume helper.
+
+PASS  restore-backed refind:systemd-boot state is recognized by the same manager.
+
+PASS  unrelated pending directions delegate to the previously effective stack.
+
+PASS  adapted r85 runtime regression on r86 stack.
+PASS  adapted r84 regression on r86 stack.
+PASS  adapted r83 regression on r86 stack.
+
+NOTE  adapted r82 ledger test is obsolete on the current matrix and fails only
+      because it asserts that rEFInd -> Limine must still be HW-PENDING; that edge
+      has since been hardware-proven. This is not an r86 functional regression.
+
+PASS  bash -n syntax validation across 176 shell files.
+
+Hardware status after packaging:
+  rEFInd -> systemd-boot live: HW-PENDING continuation at exact target boot-armed state.
+  rEFInd -> restored systemd-boot: HW-PENDING.
+  systemd-boot -> rEFInd live/restore: HW-PENDING.

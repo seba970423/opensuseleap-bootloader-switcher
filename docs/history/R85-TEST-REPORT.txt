@@ -1,0 +1,56 @@
+openSUSE Bootloader Switcher leap16-r85 test report
+Generated: 2026-09-05
+
+Hardware input analyzed:
+  20260905-234.tar.gz
+  Transaction: 20260905-234601-switch-refind-to-systemd-boot
+
+Observed r84 hardware boundary:
+  pre-stage BootCurrent: 0001 (rEFInd)
+  pre-stage BootOrder:   0001
+  staged BootNext:       0000
+  staged BootOrder:      0001,0000
+  staged target:         Boot0000 -> \EFI\systemd\systemd-bootx64.efi
+  automatic resume:      entered r64 rEFInd-edge resume
+  failure:               Current bootloader is systemd-boot, not Limine
+  persisted phase:       boot-armed
+  source retirement:     not reached
+
+Root cause:
+  No effective runtime-dispatch interceptor existed for the exact
+  refind:systemd-boot direction. The r64 resume called the generic runtime
+  validator, which delegated through every later wrapper and eventually reached
+  the historical Limine-only base validator.
+
+r85 change:
+  - adds exact refind:systemd-boot pending predicate
+  - adds native systemd-boot runtime proof for that direction
+  - preserves rEFInd persistent-first ordering before first proof
+  - reuses running-kernel/cmdline, target ownership, native systemd deep
+    validation and passive rEFInd recovery gates
+  - persists runtime-validated only after every gate passes
+  - delegates every unrelated runtime edge unchanged
+  - leaves the existing r64 systemd finalizer and restore payload path unchanged
+
+Tests:
+  PASS  focused r85 selftest
+  PASS  exact r84 stale-Limine fall-through reproduced through pre-r85 stack
+  PASS  exact r84 Boot0001 -> Boot0000 target-arrival fixture reaches r85 validator
+  PASS  systemd deep gate + passive rEFInd recovery both required
+  PASS  boot-armed target-first persistent order rejected
+  PASS  restored-systemd backup provenance selects the same fixed runtime path
+  PASS  r64 refind:systemd-boot finalizer dispatch remains authoritative
+  PASS  unrelated runtime directions delegate to the pre-r85 stack
+  PASS  adapted r84 ownership regression on the r85 effective stack
+  PASS  syntax for 173 shell files
+
+Broad inherited tests:
+  tests/selftest.sh progresses through the inherited r24/r25 suites and then
+  stops at the already-known historical r25 user-visible stale revision-string
+  assertion. This is not introduced by r85 and is unrelated to the runtime path.
+
+Hardware status after this patch:
+  rEFInd -> systemd-boot live:             HW-PENDING
+  rEFInd -> restored systemd-boot backup:  HW-PENDING
+  systemd-boot -> rEFInd live:             HW-PENDING
+  systemd-boot -> restored rEFInd backup:  HW-PENDING

@@ -1,0 +1,1004 @@
+--- /dev/null
++++ b/R81-LIMINE-REFIND-RECOVERY.md
+@@ -0,0 +1,51 @@
++# r81 — Limine/rEFInd recovery contract and diagnostic repair
++
++## What the supplied r80 bundle establishes
++
++All times below are the diagnostic filenames/local timestamps from September 5, 2026.
++
++| Operation | Evidence in this bundle | Outcome |
++| --- | --- | --- |
++| GRUB2 → Limine baseline preparation | 21:05–21:08 checkpoints; canonical and fallback proofs; GRUB retirement | Final Limine order `0000,0003` |
++| Limine → rEFInd live | `20260905-212447-switch-limine-to-refind/resume.log`; direct-kernel PreviousBoot proof; ownership-gated retirement | Completed automatically; final `BootCurrent: 0001`, `BootOrder: 0001` |
++| rEFInd → Limine live | `20260905-212929-switch-refind-to-limine/stage.log` | Failed at candidate deep validation before commit; automatic rollback restored authoritative rEFInd |
++| Either Limine/rEFInd backup restore | No restore transaction completion trace in this archive | No new restore hardware certification from this bundle |
++
++The handoff's GRUB2 ↔ rEFInd live and both restore results remain HW-PROVEN. The clean GRUB `0002,0001` topology is the earlier starting baseline, not the latest state shown by these logs. The last captured reverse attempt identifies rEFInd Boot0001 and verifies its source after rollback.
++
++The handoff describes the Limine/rEFInd campaign as completed with problems. This package records the narrower evidence available in the attached diagnostics; successful live switching cannot certify either restore direction, and local regression tests cannot certify hardware.
++
++## Confirmed defects
++
++1. **Wrong candidate recovery path.** Finalized rEFInd intentionally leaves no owned `EFI/BOOT/BOOTX64.EFI`. r64 nevertheless reused the GRUB-style `/EFI fallback` Limine stanza and changed only its comment to mention rEFInd. The effective validator had no rEFInd-specific branch and rejected that dangling recovery path. Kernel copies, BLAKE2 checks and the CachyOS theme all passed before this failure.
++2. **False final firmware report.** The successful Limine → rEFInd checkpoint contains `assessment=fail` with `source recovery Boot0000 is not active after promotion`, although source retirement was complete and the exact rEFInd target was the sole firmware entry. The reporter still assessed a pre-retirement contract.
++3. **Missing rEFInd-target checkpoint export.** The effective runtime collector handled GRUB, Limine and systemd-boot, then used a historical CachyOS fallback directory for rEFInd. This explains why the successful rEFInd transaction has a resume transcript and late checkpoint but lacks the complete intermediate runtime/final checkpoint set in its openSUSE bundle.
++
++## Changes
++
++- Before any Limine candidate deep validation, convert exactly one generated or restored fallback stanza to direct canonical `EFI/refind/refind_x64.efi` recovery. Keep the canonical rEFInd tree intact; preserve the original generic fallback bytes or absence.
++- Validate the complete recovery stanza and exact source/target hashes for the actual transaction phase. Reject duplicate recovery entries, changed source bytes, unexpected fallback appearance and changed pre-stage fallback bytes.
++- Keep direct rEFInd recovery through canonical Limine proof and the EFI/BOOT transfer. Freeze an exact pre-transfer config copy for rollback at the existing transfer boundary.
++- After the unchanged second Limine runtime proof, convert the temporary rEFInd recovery stanza into the visible `/EFI fallback` block. The old r64 finalizer would simply delete the entry, repeating the menu omission already fixed for the systemd-boot path in r59.
++- Allow at most two alias normalization passes at each existing boundary, so one same-path firmware re-synthesis wave can converge automatically. Recheck path/ESP ownership after removing duplicate IDs from BootOrder and before deletion. Continued churn, baseline-ID collisions, changed identities, failed enumeration or a failed deletion refuse success.
++- Route the pair's runtime captures through the openSUSE collector. Export rEFInd config, PreviousBoot text, EFI hashes and edge metadata. Keep a transaction-bound **report-only** baseline through snapshot removal. Reporting examines complete firmware tables, including parked duplicates, expected retirement, exact path/ESP binding, and unrelated baseline entries/order.
++
++The public menu and strict transcript-child allowlist are unchanged. Existing GRUB2/rEFInd proof and cleanup engines are delegated unchanged. No installer, package, theme, root/kernel/cmdline, ownership or independent boot-proof gate is removed. No new runtime dependency is introduced.
++
++## Hardware retest
++
++For the last state shown in this bundle, launch the extracted r81 `./bootloader-switcher.sh` and choose the normal switch to Limine. The failed r80 attempt never committed a candidate; its log shows automatic rollback, so it does not call for manual EFI/NVRAM cleanup or a GRUB baseline repair.
++
++Expected sequence:
++
++1. Candidate validation accepts **direct canonical rEFInd recovery** while generic fallback state is unchanged.
++2. First reboot proves canonical Limine with rEFInd still available.
++3. The existing engine transfers EFI/BOOT to byte-identical Limine and arms its separate fallback BootNext.
++4. Second reboot proves that exact fallback identity. Only then may rEFInd be retired.
++5. Final topology has exactly one canonical Limine alias and one genuine fallback alias, first and second in BootOrder; no canonical rEFInd source alias remains. The menu retains the visible EFI fallback entry, and final firmware-order reporting passes.
++
++Capture the complete stage/resume/checkpoint folder. Each restore direction must subsequently complete its own selected-backup transaction and fresh boot proof(s), with backup provenance retained in the result. No manual cleanup counts as a completed matrix edge.
++
++## Local validation
++
++See `R81-TEST-REPORT.txt`. These checks use temporary files, real config/hash helpers, captured firmware fixtures and simulated firmware mutations. They do not execute a real firmware update, live switch, reboot or restore on the user's hardware.
+--- /dev/null
++++ b/R81-TEST-REPORT.txt
+@@ -0,0 +1,59 @@
++openSUSE Bootloader Switcher — leap16-r81 local test report
++
++INPUTS
++  opensuse-bootloader-switcher-r80.tar(3).gz
++  context diagnosis.tar(1).gz
++
++RESULTS
++  Bash parse checks: PASS, 165 scripts.
++  r81 focused effective-stack selftest: PASS.
++  Unmodified r80 selftest against original r80: PASS.
++  r80 regression against effective r81 stack: PASS.
++  r79 GRUB parked-direct/ownership regression against effective r81: PASS.
++
++Historical r79/r80 scripts pin an exact release string. Compatibility runs
++adapted only that release assertion and the runner's ROOT location. Behavioral
++assertions, function bodies, inputs and expected mutation traces were unchanged.
++The original historical test files remain unchanged in the archive.
++
++FOCUSED COVERAGE
++  - Reproduced r80's nonexistent EFI/BOOT candidate recovery path before fixing it.
++  - Live/generated and restored/finalized menus become direct rEFInd recovery.
++  - Restored backup input bytes remain immutable.
++  - Missing fallback is legitimate before transfer; unexpected appearance fails.
++  - Existing pre-stage fallback must preserve its exact recorded hash.
++  - Tampered rEFInd source bytes and duplicate recovery stanzas fail.
++  - Pending primary/transfer validation uses fresh metadata, not staging globals.
++  - The exact primary recovery config is snapshotted at fallback transfer.
++  - Final menu keeps the visible standard EFI fallback and drops temporary recovery.
++  - Primary BootCurrent cannot satisfy final fallback acceptance.
++  - Failed second proof prevents live AND restore finalizer mutations.
++  - Replayed supplied r80 before/staged/final firmware captures.
++  - Final reporting survives private snapshot removal but rejects another transaction's cache.
++  - Retired source residue, wrong ESP, empty baseline and parked fallback duplicates fail reporting.
++  - Reverse candidate/transfer/final firmware reporting is direction- and phase-aware.
++  - rEFInd runtime evidence is routed into the Leap collector.
++  - One same-ID alias re-synthesis wave converges in two passes.
++  - Continued churn is bounded; failed deletion, enumeration, baseline collisions,
++    and identity changes after BootOrder writes fail closed.
++  - Hardware matrix records the observed live proof separately from restore evidence.
++
++CLI / ENVIRONMENT
++  Effective --matrix printer and release metadata: PASS (r81 selftest).
++  Full script execution on this non-Leap container was correctly rejected by
++  the existing 'openSUSE Leap 16.x only' platform gate. The gate was not changed.
++  ShellCheck is not installed; no ShellCheck result is claimed.
++  No runtime dependency was added.
++
++LIMITS
++  No physical EFI-variable write, live switch, reboot or restore was performed
++  here. r81's corrected reverse path and each restore direction still require
++  their own complete hardware transaction logs. Tests are not hardware proof.
++
++RAW SUITE RESULTS
++
++leap16-r81 selftest: PASS
++
++leap16-r79 selftest: PASS
++
++leap16-r80 selftest: PASS
+--- a/README.md
++++ b/README.md
+@@ -1,3 +1,11 @@
++# openSUSE Bootloader Switcher — leap16-r81
++
++**leap16-r81:** fixes the r80 rEFInd → Limine pre-commit failure: the Limine candidate now points recovery directly at canonical rEFInd, whose finalized topology deliberately has no generic EFI/BOOT fallback. A direction-aware validator checks unchanged pre-transfer fallback bytes/absence, then byte-identical Limine fallback ownership. Only the existing independent second boot proof permits the temporary rEFInd entry to become the visible final EFI fallback menu item. Live and validated backup restores share these gates.
++
++The Limine/rEFInd pair's runtime checkpoints now use the openSUSE diagnostic bundle, include rEFInd configuration/PreviousBoot evidence, and retain a transaction-bound reporting baseline after private snapshot cleanup. Final firmware reports expect source retirement instead of reporting the missing retired source as a failure. Alias normalization allows one re-synthesis wave through at most two passes at each boundary; ownership collisions, enumeration errors and failed deletions remain fatal.
++
++See [R81-LIMINE-REFIND-RECOVERY.md](R81-LIMINE-REFIND-RECOVERY.md) for the diagnosis, evidence ledger and hardware retest. Run `bash tests/leap16-r81-selftest.sh` for the focused regression suite. Historical revision notes follow below.
++
+ # openSUSE Bootloader Switcher — leap16-r78
+ 
+ **leap16-r78:** fixes the fresh-process PTY dispatch omission exposed by the first r77 finalized-GRUB duplicate cleanup attempt. The parent correctly selected the NVRAM-only `grub -> grub` cleanup, but the strict r46 transcript child still inherited r75's allowlist and rejected `leap16_r77_cleanup_finalized_grub_duplicates_inner` before any cleanup preflight or firmware write. r78 admits exactly that zero-argument `grub -> grub`, `cleanup` contract and delegates every existing transcript child unchanged. See `R78-GRUB-DUPLICATE-CLEANUP-DISPATCH.md`.
+--- a/bootloader-switcher.sh
++++ b/bootloader-switcher.sh
+@@ -2,7 +2,7 @@
+ set -u
+ 
+ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+-SWITCHER_RELEASE="leap16-r80"
++SWITCHER_RELEASE="leap16-r81"
+ source "$SCRIPT_DIR/lib/common.sh"
+ source "$SCRIPT_DIR/lib/storage.sh"
+ source "$SCRIPT_DIR/lib/detect.sh"
+@@ -114,6 +114,7 @@
+ source "$SCRIPT_DIR/lib/leap16_r78.sh"
+ source "$SCRIPT_DIR/lib/leap16_r79.sh"
+ source "$SCRIPT_DIR/lib/leap16_r80.sh"
++source "$SCRIPT_DIR/lib/leap16_r81.sh"
+ 
+ select_target_bootloader() {
+     local choice target current_name
+@@ -256,7 +257,7 @@
+         cat <<'HELP'
+ Usage: ./bootloader-switcher.sh [OPTION]
+ 
+-openSUSE Leap 16 r80 — Limine ↔ rEFInd live/restore pre-hardware ownership hardening.
++openSUSE Leap 16 r81 — Limine ↔ rEFInd recovery-menu and diagnostic repair.
+ 
+ Without options, opens the preserved nine-selector menu.
+ 
+@@ -271,13 +272,18 @@
+   --matrix          print implemented vs hardware-proven live/restore matrices
+   --help            show this help
+ 
+-R80 WRITE CONTRACT:
++R81 WRITE CONTRACT:
++  - rEFInd -> Limine stages direct canonical rEFInd recovery from the start, even when EFI/BOOT is absent
++  - after the independent Limine fallback boot proof, the temporary recovery stanza becomes the visible EFI fallback menu item
++  - each alias normalization boundary allows at most two passes; continued churn, changed ownership or failed deletion stops finalization
++  - Limine/rEFInd runtime checkpoints use the openSUSE diagnostic root and preserve a transaction-bound, report-only baseline through cleanup
+   - Limine <-> rEFInd live switches and both cross-loader restore directions are enabled through the existing r64 adapter engines
+   - Limine -> rEFInd source retirement rejects any same-path alias whose Boot#### number belonged to an unrelated pre-stage firmware entry
+   - rEFInd -> Limine requires exact-one canonical Limine + exact-one EFI/BOOT fallback aliases after the second proof; post-stage duplicates are removed from BootOrder before checked deletion
+   - fallback-transfer rollback removes only IDs absent from the complete pre-stage table and must restore the exact pre-stage fallback alias/byte topology
+   - the same r80 ownership gates apply to validated backup restore because restore reuses the live staging/runtime/finalization engines
+-  - GRUB2 <-> rEFInd live and cross-loader restore are HW-PROVEN in both directions; Limine <-> rEFInd remains HW-PENDING until hardware proof
++  - GRUB2 <-> rEFInd live and restore remain HW-PROVEN; the supplied r80 logs additionally prove Limine -> rEFInd live
++  - rEFInd -> Limine and both Limine/rEFInd restores require their own complete hardware evidence; r81 local tests do not certify those paths
+   - exact format-v5 rEFInd -> GRUB boot-armed state is dispatched only to the Leap-native GRUB runtime validator; it cannot fall through to the historical Limine-only validator
+   - an already-running exact GRUB shim target is adopted in place without repair, restaging, rollback, or premature BootOrder/source changes
+   - runtime proof requires exact shim BootCurrent/path/ESP, consumed transaction BootNext, rEFInd-first persistent BootOrder, running kernel/cmdline equivalence, immutable candidate ownership, deep native GRUB validation, passive exact rEFInd recovery, and the parked direct-GRUB alias
+--- /dev/null
++++ b/lib/leap16_r81.sh
+@@ -0,0 +1,494 @@
++#!/usr/bin/env bash
++# leap16-r81: repair the hardware-observed Limine/rEFInd recovery contract
++# and preserve rEFInd-edge diagnostics through final transaction cleanup.
++# Live and restore still use the same r64 staging and independent boot proofs.
++
++leap16_r81_recovery_block() {
++    case "$1" in
++        refind)
++            printf '/openSUSE rEFInd recovery\n### Temporary direct recovery path retained until Limine fallback proof completes\ncomment: Native openSUSE rEFInd recovery path\nprotocol: efi\npath: boot():/EFI/refind/refind_x64.efi\n'
++            ;;
++        fallback)
++            printf '/EFI fallback\n### Standard UEFI fallback executable; byte-identical to canonical Limine\ncomment: Standard UEFI fallback loader (Limine)\nprotocol: efi\npath: boot():/EFI/BOOT/BOOTX64.EFI\n'
++            ;;
++        *) return 1 ;;
++    esac
++}
++
++# Check one complete stanza, not unrelated title/path matches from different
++# entries. No extra EFI chainloader may masquerade as this recovery contract.
++leap16_r81_recovery_block_present() {
++    local conf=$1 kind=$2 block
++    block=$(leap16_r81_recovery_block "$kind") || return 1
++    awk -v block="$block" '
++        BEGIN { n=split(block,wanted,"\n") }
++        $0==wanted[1] {
++            count++
++            for(i=2;i<=n;i++) if(getline<=0 || $0!=wanted[i]) bad=1
++            next
++        }
++        /^[[:space:]]*protocol:[[:space:]]*efi([[:space:]]|$)/ {bad=1}
++        /^\/EFI fallback$/ || /^\/openSUSE .* recovery$/ {bad=1}
++        END {exit !(count==1 && !bad)}
++    ' "$conf"
++}
++
++leap16_r81_render_recovery() {
++    local conf=$1 title=$2 path=$3 kind=$4 out=$5 block
++    block=$(leap16_r81_recovery_block "$kind") || return 1
++    awk -v title="$title" -v path="$path" -v block="$block" '
++        $0==title {
++            count++
++            if(getline<=0 || $0 !~ /^### /) bad=1
++            if(getline<=0 || $0 !~ /^comment: /) bad=1
++            if(getline<=0 || $0!="protocol: efi") bad=1
++            if(getline<=0 || $0!=path) bad=1
++            print block
++            next
++        }
++        {print}
++        END {exit !(count==1 && !bad)}
++    ' "$conf" >"$out" || return 1
++    leap16_r81_recovery_block_present "$out" "$kind"
++}
++
++# Both freshly generated and validated restored Limine configs initially have
++# /EFI fallback. Finalized rEFInd intentionally does not own EFI/BOOT; point
++# recovery at its complete canonical tree before the first deep target gate.
++leap16_r64_patch_limine_pretransfer_comment() {
++    local conf="${ESP_MOUNT%/}/limine.conf" input out hash
++    [[ ${BOOTLOADER:-} == refind && ${LEAP16_R64_STAGING:-0} == 1 ]] || return 1
++    input=$(mktemp) || return 1
++    out=$(mktemp) || { rm -f -- "$input"; return 1; }
++    if ! leap16_r64_refind_read "$conf" >"$input" \
++        || ! leap16_r81_render_recovery "$input" '/EFI fallback' \
++            'path: boot():/EFI/BOOT/BOOTX64.EFI' refind "$out"; then
++        rm -f -- "$input" "$out"
++        fail 'Expected exactly one intact Limine fallback stanza before direct rEFInd recovery conversion'
++        return 1
++    fi
++    hash=$(sha256sum -- "$out" | awk '{print $1}')
++    r21_atomic_replace "$out" "$conf" "$hash" || { rm -f -- "$input" "$out"; return 1; }
++    rm -f -- "$input" "$out"
++    ok 'Limine candidate recovery points directly to canonical rEFInd; EFI/BOOT retains its pre-stage state'
++}
++
++eval "$(declare -f leap16_validate_limine_recovery_contract | sed '1s/leap16_validate_limine_recovery_contract/leap16_validate_limine_recovery_contract_pre_leap16_r81/')"
++leap16_validate_limine_recovery_contract() {
++    local conf=$1 esp=${ESP_MOUNT%/} fh ph rh expected existed old_hash fallback=''
++    if [[ ${LEAP16_R64_STAGING:-0} != 1 || ${BOOTLOADER:-} != refind ]] \
++        && ! leap16_r64_pending_refind_limine; then
++        leap16_validate_limine_recovery_contract_pre_leap16_r81 "$@"
++        return $?
++    fi
++    LEAP16_LIMINE_RECOVERY_DETAIL=''
++    ph=$(r21_hash_privileged "$esp/EFI/LIMINE/LIMINE_X64.EFI") || return 1
++    [[ $ph =~ ^[0-9A-Fa-f]{64}$ ]] || return 1
++    if [[ ${LEAP16_R64_STAGING:-0} == 1 ]]; then
++        expected=${R26_SOURCE_EFI_HASH:-}
++        existed=${OLD_FALLBACK_EXISTED:-}; old_hash=${OLD_FALLBACK_HASH:-}
++    else
++        expected=${PENDING_SOURCE_EFI_HASH:-}
++        existed=${PENDING_OLD_FALLBACK_EXISTED:-}; old_hash=${PENDING_OLD_FALLBACK_HASH:-}
++        [[ $ph == "$PENDING_TARGET_EFI_HASH" ]] || return 1
++        fallback=$(leap16_r64_limine_fallback_id 2>/dev/null || true)
++    fi
++
++    if leap16_r81_recovery_block_present "$conf" refind; then
++        rh=$(r21_hash_privileged "$esp/EFI/refind/refind_x64.efi") || return 1
++        [[ $expected =~ ^[0-9A-Fa-f]{64}$ && $rh == "$expected" && $rh != "$ph" ]] || return 1
++        if [[ -n $fallback ]]; then
++            fh=$(r21_hash_privileged "$esp/EFI/BOOT/BOOTX64.EFI") || return 1
++            [[ $fh == "$ph" && $fh == "$(leap16_r64_meta_value limine_fallback_hash)" ]] || return 1
++            LEAP16_LIMINE_RECOVERY_DETAIL='Limine owns byte-identical EFI/BOOT; exact canonical rEFInd remains direct recovery until proof #2'
++        elif [[ $existed == 1 ]]; then
++            fh=$(r21_hash_privileged "$esp/EFI/BOOT/BOOTX64.EFI") || return 1
++            [[ $old_hash =~ ^[0-9A-Fa-f]{64}$ && $fh == "$old_hash" ]] || return 1
++            LEAP16_LIMINE_RECOVERY_DETAIL='Direct canonical rEFInd recovery is intact; existing generic fallback bytes remain unchanged'
++        elif [[ $existed == 0 ]]; then
++            [[ ! -e $esp/EFI/BOOT/BOOTX64.EFI && ! -L $esp/EFI/BOOT/BOOTX64.EFI ]] || return 1
++            LEAP16_LIMINE_RECOVERY_DETAIL='Direct canonical rEFInd recovery is intact; generic fallback remains absent before transfer'
++        else
++            return 1
++        fi
++        return 0
++    fi
++
++    # This branch is reachable only inside the unchanged two-proof finalizer.
++    # A final-looking config or a runtime-validated primary alone earns nothing.
++    [[ ${LEAP16_R81_FINAL_MENU_AUTHORIZED:-0} == 1 \
++       && ${PENDING_PHASE:-} == runtime-validated && -n $fallback \
++       && ${BOOT_CURRENT^^} == "${fallback^^}" ]] || return 1
++    leap16_r81_recovery_block_present "$conf" fallback || return 1
++    fh=$(r21_hash_privileged "$esp/EFI/BOOT/BOOTX64.EFI") || return 1
++    [[ $fh == "$ph" && $fh == "$(leap16_r64_meta_value limine_fallback_hash)" ]] || return 1
++    LEAP16_LIMINE_RECOVERY_DETAIL='After two Limine boot proofs, the final menu exposes the byte-identical standard EFI fallback'
++}
++
++# Recovery already uses canonical rEFInd. Freeze an exact rollback copy at the
++# same r64 transfer boundary; no premature EFI/BOOT recovery entry is needed.
++leap16_r64_rewrite_limine_recovery_to_refind() {
++    local conf="${PENDING_ESP_MOUNT%/}/limine.conf" pre expected
++    pre=$(leap16_r64_limine_preconf_path) || return 1
++    expected=$(leap16_r64_meta_value limine_primary_conf_hash) || return 1
++    [[ $expected =~ ^[0-9A-Fa-f]{64}$ && $(r21_hash_privileged "$conf") == "$expected" ]] \
++        || { fail 'Primary limine.conf changed before fallback transfer' >&2; return 1; }
++    leap16_r64_refind_read "$conf" >"$pre" || return 1
++    chmod 600 -- "$pre" || return 1
++    [[ $(sha256sum -- "$pre" | awk '{print $1}') == "$expected" ]] || return 1
++    leap16_r81_recovery_block_present "$pre" refind \
++        || { fail 'Primary Limine config lacks exact direct rEFInd recovery' >&2; return 1; }
++    printf '%s\n' "$expected"
++}
++
++# Preserve the established visible fallback menu, as GRUB/systemd -> Limine do.
++leap16_r64_remove_limine_refind_recovery_block() {
++    local conf="${PENDING_ESP_MOUNT%/}/limine.conf" expected input out hash
++    [[ ${LEAP16_R81_FINAL_MENU_AUTHORIZED:-0} == 1 ]] || return 1
++    expected=$(leap16_r64_meta_value limine_transferred_conf_hash) || return 1
++    [[ $expected =~ ^[0-9A-Fa-f]{64}$ && $(r21_hash_privileged "$conf") == "$expected" ]] \
++        || { fail 'Transferred limine.conf changed before final fallback-menu conversion' >&2; return 1; }
++    input=$(mktemp) || return 1
++    out=$(mktemp) || { rm -f -- "$input"; return 1; }
++    if ! leap16_r64_refind_read "$conf" >"$input" \
++        || ! leap16_r81_render_recovery "$input" '/openSUSE rEFInd recovery' \
++            'path: boot():/EFI/refind/refind_x64.efi' fallback "$out"; then
++        rm -f -- "$input" "$out"; return 1
++    fi
++    hash=$(sha256sum -- "$out" | awk '{print $1}')
++    r21_atomic_replace "$out" "$conf" "$hash" || { rm -f -- "$input" "$out"; return 1; }
++    rm -f -- "$input" "$out"
++    printf '%s\n' "$hash"
++}
++
++eval "$(declare -f leap16_r64_retire_refind_after_limine_fallback_proof | sed '1s/leap16_r64_retire_refind_after_limine_fallback_proof/leap16_r64_retire_refind_after_limine_fallback_proof_pre_leap16_r81/')"
++leap16_r64_retire_refind_after_limine_fallback_proof() {
++    # The inherited function's very first gate is the complete fresh fallback
++    # runtime proof. This dynamically scoped flag admits only its final menu.
++    local LEAP16_R81_FINAL_MENU_AUTHORIZED=1
++    leap16_r64_retire_refind_after_limine_fallback_proof_pre_leap16_r81 "$@"
++}
++
++# Two passes tolerate one re-synthesis wave. Enumeration, baseline collisions,
++# changed identities and failed deletions are fatal on either pass. These are
++# the same r80 ownership gates, rechecked after the BootOrder write as well.
++leap16_r80_normalize_limine_aliases_after_fallback_proof() {
++    [[ ${PENDING_SOURCE:-}:${PENDING_TARGET:-} == refind:limine \
++       && ${PENDING_PHASE:-} == runtime-validated ]] || return 1
++    leap16_r64_limine_fallback_staged || return 1
++    local target=${PENDING_TARGET_BOOT_ID^^} fallback pass raw primary_raw fallback_raw id path csv
++    local -a removals=()
++    fallback=$(leap16_r64_limine_fallback_id) || return 1; fallback=${fallback^^}
++    for pass in 1 2; do
++        leap16_r80_validate_limine_keep_aliases || return 1
++        primary_raw=$(leap16_r80_collect_poststage_duplicates "$LEAP16_R80_LIMINE_PRIMARY_PATH" "$target") || return 1
++        fallback_raw=$(leap16_r80_collect_poststage_duplicates "$LEAP16_R21_FALLBACK_EFI_PATH" "$fallback") || return 1
++        removals=()
++        raw=$primary_raw
++        [[ -z $fallback_raw ]] || raw="${raw}${raw:+$'\n'}${fallback_raw}"
++        [[ -z $raw ]] || mapfile -t removals <<<"$raw"
++        if ((${#removals[@]})); then
++            csv=$(IFS=,; printf '%s' "${removals[*]}")
++            leap16_r77_rewrite_order_without_ids "$csv" >/dev/null || return 1
++            for id in "${removals[@]}"; do
++                [[ -n $id ]] || continue
++                path=$LEAP16_R21_FALLBACK_EFI_PATH
++                [[ $'\n'$primary_raw$'\n' != *$'\n'"$id"$'\n'* ]] || path=$LEAP16_R80_LIMINE_PRIMARY_PATH
++                if leap16_r80_id_existed_in_baseline "$id" \
++                    || ! leap16_nvram_entry_matches_current_esp "$id" \
++                    || ! nvram_id_matches_path "$id" "$path"; then
++                    fail "Duplicate Boot$id changed ownership before deletion"; return 1
++                fi
++                leap16_order_has_id "$(leap16_current_boot_order)" "$id" \
++                    && { fail "Duplicate Boot$id remains in BootOrder before deletion"; return 1; }
++                sudo efibootmgr -b "$id" -B >/dev/null \
++                    || { fail "Could not delete bounded Limine/fallback duplicate Boot$id"; return 1; }
++                if boot_id_exists "$id"; then
++                    leap16_nvram_entry_matches_current_esp "$id" && nvram_id_matches_path "$id" "$path" \
++                        || { fail "Boot$id changed identity after deletion; refusing further cleanup"; return 1; }
++                    # Same-path re-synthesis is re-enumerated below; it gets
++                    # at most the one remaining pass and cannot earn success.
++                fi
++                ok "Deleted bounded Limine/fallback duplicate Boot$id (normalization pass $pass/2)"
++            done
++        fi
++        leap16_r80_validate_limine_keep_aliases || return 1
++        primary_raw=$(leap16_r80_current_limine_primary_ids) || return 1
++        fallback_raw=$(leap16_r80_current_limine_fallback_ids) || return 1
++        if [[ $primary_raw == "$target" && $fallback_raw == "$fallback" ]]; then
++            ok "Limine NVRAM aliases are unique: primary Boot$target, fallback Boot$fallback"
++            return 0
++        fi
++    done
++    fail 'Limine alias topology did not converge after two bounded normalization passes; success is refused'
++    return 1
++}
++
++leap16_r81_diagnostic_pair() {
++    case "${PENDING_SOURCE:-}:${PENDING_TARGET:-}" in limine:refind|refind:limine) return 0;; *) return 1;; esac
++}
++
++leap16_r81_report_cache_dir() {
++    [[ -n ${LEAP16_DIAGNOSTIC_ROOT:-} ]] || return 1
++    printf '%s/.r81-refind-report\n' "${LEAP16_DIAGNOSTIC_ROOT%/}"
++}
++
++# Report-only context. It is never supplied to ownership, rollback or runtime
++# proof gates. The unique snapshot path binds the cache to this transaction.
++leap16_r81_cache_report_context() {
++    leap16_r81_diagnostic_pair || return 0
++    local baseline cache tmp fallback='' pu
++    baseline=$(leap16_r64_baseline_path) || return 1
++    leap16_r60_valid_efibootmgr_dump "$baseline" || return 1
++    cache=$(leap16_r81_report_cache_dir) || return 1
++    [[ ! -L $cache ]] || return 1
++    mkdir -p -- "$cache" || return 1
++    chmod 700 -- "$cache" || return 1
++    pu=$(leap16_r80_transaction_partuuid) || return 1
++    [[ -n $pu ]] || return 1
++    fallback=$(leap16_r64_limine_fallback_id 2>/dev/null || true)
++    cp -- "$baseline" "$cache/baseline.txt" || return 1
++    tmp=$(mktemp -- "$cache/context.XXXXXX") || return 1
++    {
++        printf 'snapshot\t%s\n' "$PENDING_TRANSACTION_SNAPSHOT_DIR"
++        printf 'direction\t%s:%s\n' "$PENDING_SOURCE" "$PENDING_TARGET"
++        printf 'target\t%s\n' "${PENDING_TARGET_BOOT_ID^^}"
++        printf 'source\t%s\n' "${PENDING_OLD_BOOT_ID^^}"
++        printf 'partuuid\t%s\n' "$pu"
++        printf 'fallback\t%s\n' "$fallback"
++    } >"$tmp" || { rm -f -- "$tmp"; return 1; }
++    mv -f -- "$tmp" "$cache/context.tsv"
++}
++
++leap16_r81_report_value() {
++    local cache
++    cache=$(leap16_r81_report_cache_dir) || return 1
++    awk -F'\t' -v key="$1" '$1==key {print $2; exit}' "$cache/context.tsv"
++}
++
++leap16_r81_report_cache_matches() {
++    [[ $(leap16_r81_report_value snapshot) == "${PENDING_TRANSACTION_SNAPSHOT_DIR:-}" \
++       && $(leap16_r81_report_value direction) == "${PENDING_SOURCE:-}:${PENDING_TARGET:-}" \
++       && $(leap16_r81_report_value target) == "${PENDING_TARGET_BOOT_ID^^}" \
++       && $(leap16_r81_report_value source) == "${PENDING_OLD_BOOT_ID^^}" ]]
++}
++
++leap16_r81_report_line_matches() {
++    local line=$1 expected=$2 pu=$3 path
++    [[ ${line,,} == *",gpt,${pu,,},"* ]] || return 1
++    path=$(efi_path_from_efibootmgr_line "$line") || return 1
++    [[ $(normalize_efi_path "${path,,}") == "$(normalize_efi_path "${expected,,}")" ]]
++}
++
++# Classify complete Boot#### tables, including parked aliases. Final source
++# absence is the expected state after retirement, never a missing-recovery
++# error. Intermediate stages retain the source and independently track proof #2.
++leap16_r81_assess_pair_order() {
++    local phase=$1 cache baseline current order next boot_current pu target source fallback='' final=0
++    local target_path source_path id line old path kind expected='' expected_foreign='' stable='' first
++    local target_count=0 fallback_count=0 source_count=0 has_primary_source=0 has_fallback_source=0
++    local -A roles=() base_lines=() current_lines=()
++    local -a original_ids=() ids=()
++    LEAP16_ORDER_REASON=''; LEAP16_ORDER_CURRENT_FULL=''; LEAP16_ORDER_EXPECTED_STABLE=''; LEAP16_ORDER_CURRENT_STABLE=''
++    LEAP16_ORDER_BBS_ORIGINAL=''; LEAP16_ORDER_BBS_CURRENT=''; LEAP16_ORDER_BBS_MISSING=''; LEAP16_ORDER_BBS_ADDED=''
++    leap16_r81_report_cache_matches || { LEAP16_ORDER_REASON='rEFInd-edge report context is missing or belongs to another transaction'; return 1; }
++    cache=$(leap16_r81_report_cache_dir) || return 1
++    leap16_r60_valid_efibootmgr_dump "$cache/baseline.txt" \
++        || { LEAP16_ORDER_REASON='complete cached firmware baseline is unavailable'; return 1; }
++    baseline=$(cat -- "$cache/baseline.txt") || return 1
++    current=$(efibootmgr -v) || { LEAP16_ORDER_REASON='current firmware enumeration failed'; return 1; }
++    order=$(awk -F': ' '/^BootOrder:/{print toupper($2);exit}' <<<"$current")
++    next=$(awk -F': ' '/^BootNext:/{print toupper($2);exit}' <<<"$current")
++    boot_current=$(awk -F': ' '/^BootCurrent:/{print toupper($2);exit}' <<<"$current")
++    [[ $order =~ ^[0-9A-F]{4}(,[0-9A-F]{4})*$ ]] || { LEAP16_ORDER_REASON='current BootOrder is unreadable'; return 1; }
++    LEAP16_ORDER_CURRENT_FULL=$order
++    pu=$(leap16_r81_report_value partuuid); target=${PENDING_TARGET_BOOT_ID^^}; source=${PENDING_OLD_BOOT_ID^^}
++    case "$phase" in finalized-refind-from-limine|finalized-limine-from-refind|auto-resume-pass) final=1;; esac
++    if [[ $PENDING_TARGET == refind ]]; then
++        target_path=$LEAP16_R64_REFIND_EFI; source_path=$LEAP16_R80_LIMINE_PRIMARY_PATH
++    else
++        target_path=$LEAP16_R80_LIMINE_PRIMARY_PATH; source_path=$LEAP16_R64_REFIND_EFI
++        fallback=$(leap16_r81_report_value fallback)
++    fi
++    while IFS= read -r line; do
++        [[ $line =~ ^Boot([0-9A-Fa-f]{4})\*?[[:space:]] ]] || continue
++        id=${BASH_REMATCH[1]^^}; base_lines[$id]=$line
++    done <<<"$baseline"
++    [[ $(awk -F': ' '/^BootOrder:/{print toupper($2);exit}' <<<"$baseline") == "${PENDING_ORIGINAL_BOOT_ORDER^^}" ]] \
++        || { LEAP16_ORDER_REASON='cached baseline does not match the original BootOrder'; return 1; }
++    IFS=',' read -ra original_ids <<<"${PENDING_ORIGINAL_BOOT_ORDER^^}"
++    for id in "${original_ids[@]}"; do
++        [[ -n ${base_lines[$id]:-} ]] || { LEAP16_ORDER_REASON="baseline is missing original Boot$id"; return 1; }
++    done
++    while IFS= read -r line; do
++        [[ $line =~ ^Boot([0-9A-Fa-f]{4})\*?[[:space:]] ]] || continue
++        id=${BASH_REMATCH[1]^^}; current_lines[$id]=$line; kind=foreign
++        if leap16_line_is_bbs "$line"; then roles[$id]=bbs; continue; fi
++        if leap16_r81_report_line_matches "$line" "$target_path" "$pu"; then
++            [[ $id == "$target" && $line == "Boot$id*"* ]] || { LEAP16_ORDER_REASON='canonical target alias is duplicated, inactive or changed'; return 1; }
++            target_count=$((target_count+1)); kind=target
++        elif leap16_r81_report_line_matches "$line" "$source_path" "$pu" \
++            || { [[ $PENDING_SOURCE == limine ]] && leap16_r81_report_line_matches "$line" "$LEAP16_R21_FALLBACK_EFI_PATH" "$pu"; }; then
++            (( ! final )) || { LEAP16_ORDER_REASON="retired source alias Boot$id remains"; return 1; }
++            old=${base_lines[$id]:-}
++            if [[ -n $old ]]; then
++                path=$(efi_path_from_efibootmgr_line "$line") || return 1
++                leap16_r81_report_line_matches "$old" "$path" "$pu" || { LEAP16_ORDER_REASON="source alias Boot$id reused an unrelated baseline ID"; return 1; }
++            fi
++            source_count=$((source_count+1)); kind=source
++            if leap16_r81_report_line_matches "$line" "$source_path" "$pu"; then has_primary_source=1; else has_fallback_source=1; fi
++        elif [[ -n $fallback ]] && leap16_r81_report_line_matches "$line" "$LEAP16_R21_FALLBACK_EFI_PATH" "$pu"; then
++            [[ $id == "$fallback" && $line == "Boot$id*"* ]] || { LEAP16_ORDER_REASON='Limine fallback alias is duplicated, inactive or changed'; return 1; }
++            fallback_count=$((fallback_count+1)); kind=fallback
++        else
++            [[ ${base_lines[$id]:-} == "$line" ]] || { LEAP16_ORDER_REASON="unrelated EFI entry Boot$id appeared or changed"; return 1; }
++        fi
++        roles[$id]=$kind
++    done <<<"$current"
++    ((target_count==1)) || { LEAP16_ORDER_REASON='exact canonical target alias is missing'; return 1; }
++    if (( ! final )); then
++        ((has_primary_source)) || { LEAP16_ORDER_REASON='canonical source recovery is missing before retirement'; return 1; }
++        [[ $PENDING_SOURCE != limine || $has_fallback_source == 1 ]] || { LEAP16_ORDER_REASON='Limine source fallback is missing before retirement'; return 1; }
++    fi
++    [[ -z $fallback || $fallback_count == 1 ]] || { LEAP16_ORDER_REASON='recorded Limine fallback is missing'; return 1; }
++    [[ $PENDING_TARGET != limine || $final == 0 || -n $fallback ]] || { LEAP16_ORDER_REASON='final Limine fallback identity is unavailable'; return 1; }
++
++    # Preserve every unrelated baseline entry, even those outside BootOrder.
++    for id in "${!base_lines[@]}"; do
++        line=${base_lines[$id]}
++        leap16_line_is_bbs "$line" && continue
++        leap16_r81_report_line_matches "$line" "$source_path" "$pu" && continue
++        if [[ $PENDING_SOURCE == limine ]] && leap16_r81_report_line_matches "$line" "$LEAP16_R21_FALLBACK_EFI_PATH" "$pu"; then continue; fi
++        [[ -z $fallback || $id != "$fallback" ]] || continue
++        [[ ${current_lines[$id]:-} == "$line" ]] || { LEAP16_ORDER_REASON="unrelated baseline Boot$id disappeared or changed"; return 1; }
++    done
++    IFS=',' read -ra original_ids <<<"${PENDING_ORIGINAL_BOOT_ORDER^^}"
++    for id in "${original_ids[@]}"; do
++        [[ ${roles[$id]:-} != foreign ]] || expected_foreign=$(leap16_r60_csv_append_unique "$expected_foreign" "$id")
++        if leap16_line_is_bbs "${base_lines[$id]:-}"; then LEAP16_ORDER_BBS_ORIGINAL=$(leap16_r60_csv_append_unique "$LEAP16_ORDER_BBS_ORIGINAL" "$id"); fi
++    done
++    IFS=',' read -ra ids <<<"$order"
++    local foreign='' core='' kind_current
++    for id in "${ids[@]}"; do
++        kind_current=${roles[$id]:-}
++        [[ -n $kind_current ]] || { LEAP16_ORDER_REASON="BootOrder references missing Boot$id"; return 1; }
++        if [[ $kind_current == bbs ]]; then
++            LEAP16_ORDER_BBS_CURRENT=$(leap16_r60_csv_append_unique "$LEAP16_ORDER_BBS_CURRENT" "$id"); continue
++        fi
++        leap16_order_has_id "$stable" "$id" && { LEAP16_ORDER_REASON="BootOrder repeats Boot$id"; return 1; }
++        stable=$(leap16_r60_csv_append_unique "$stable" "$id")
++        if [[ $kind_current == foreign ]]; then foreign=$(leap16_r60_csv_append_unique "$foreign" "$id"); else core=$(leap16_r60_csv_append_unique "$core" "$id"); fi
++    done
++    [[ $foreign == "$expected_foreign" ]] || { LEAP16_ORDER_REASON='unrelated persistent EFI order changed'; return 1; }
++    LEAP16_ORDER_CURRENT_STABLE=$stable
++    if ((final)); then
++        expected=$target; [[ -z $fallback ]] || expected="$target,$fallback"
++        [[ -z $expected_foreign ]] || expected="$expected,$expected_foreign"
++        [[ $stable == "$expected" && -z $next ]] || { LEAP16_ORDER_REASON='final persistent topology or BootNext is not exact'; return 1; }
++        [[ $boot_current == "${fallback:-$target}" ]] || { LEAP16_ORDER_REASON='final BootCurrent does not match the required proof identity'; return 1; }
++        LEAP16_ORDER_REASON='runtime-proven target topology is exact; owned source aliases are retired; unrelated EFI entries are preserved'
++    else
++        first=${stable%%,*}
++        if [[ -n $fallback ]]; then
++            [[ $stable == "$target,$fallback" || $stable == "$target,$fallback,"* ]] || { LEAP16_ORDER_REASON='Limine primary/fallback do not lead the transferred topology'; return 1; }
++        else
++            [[ $first == "$source" || ( $first == "$target" && ${PENDING_PHASE:-} == runtime-validated ) ]] \
++                || { LEAP16_ORDER_REASON='source-first or runtime-proven promotion order is not satisfied'; return 1; }
++        fi
++        leap16_order_has_id "$core" "$source" && leap16_order_has_id "$core" "$target" \
++            || { LEAP16_ORDER_REASON='source/target recovery identities are not both in BootOrder'; return 1; }
++        [[ -z $next || $next == "${fallback:-$target}" ]] || { LEAP16_ORDER_REASON='unrelated BootNext appeared'; return 1; }
++        # This stage permits bounded source alias churn; report its independently
++        # checked constraints without presenting observed order as an oracle.
++        expected=''
++        LEAP16_ORDER_REASON='target and source recovery identities match this pre-retirement proof stage; unrelated EFI entries are preserved'
++    fi
++    LEAP16_ORDER_EXPECTED_STABLE=$expected
++    for id in ${LEAP16_ORDER_BBS_ORIGINAL//,/ }; do leap16_order_has_id "$LEAP16_ORDER_BBS_CURRENT" "$id" || LEAP16_ORDER_BBS_MISSING=$(leap16_r60_csv_append_unique "$LEAP16_ORDER_BBS_MISSING" "$id"); done
++    for id in ${LEAP16_ORDER_BBS_CURRENT//,/ }; do leap16_order_has_id "$LEAP16_ORDER_BBS_ORIGINAL" "$id" || LEAP16_ORDER_BBS_ADDED=$(leap16_r60_csv_append_unique "$LEAP16_ORDER_BBS_ADDED" "$id"); done
++    return 0
++}
++
++eval "$(declare -f leap16_write_firmware_order_report | sed '1s/leap16_write_firmware_order_report/leap16_write_firmware_order_report_pre_leap16_r81/')"
++leap16_write_firmware_order_report() {
++    if ! leap16_r81_diagnostic_pair; then leap16_write_firmware_order_report_pre_leap16_r81 "$@"; return $?; fi
++    local rc=0
++    leap16_r81_assess_pair_order "${2:-snapshot}" || rc=$?
++    leap16_emit_firmware_order_report "$1" "$rc"
++}
++
++eval "$(declare -f leap16_capture_diagnostics | sed '1s/leap16_capture_diagnostics/leap16_capture_diagnostics_pre_leap16_r81/')"
++leap16_capture_diagnostics() {
++    if ! leap16_r81_diagnostic_pair; then leap16_capture_diagnostics_pre_leap16_r81 "$@"; return $?; fi
++    local dir cache snap file
++    leap16_r81_cache_report_context >/dev/null 2>&1 || true
++    dir=$(leap16_capture_diagnostics_pre_leap16_r81 "$@") || return 1
++    [[ -d $dir ]] || return 1
++    leap16_diag_read_file "${ESP_MOUNT%/}/EFI/refind/refind.conf" "$dir/refind.conf"
++    leap16_diag_read_file /boot/refind_linux.conf "$dir/refind_linux.conf"
++    r33_refind_previous_boot_text >"$dir/refind-PreviousBoot.txt" 2>&1 || true
++    for file in refind_x64.efi drivers_x64/ext4_x64.efi; do
++        printf '%s  %s\n' "$(r21_hash_privileged "${ESP_MOUNT%/}/EFI/refind/$file" 2>/dev/null || printf MISSING)" "${ESP_MOUNT%/}/EFI/refind/$file"
++    done >"$dir/refind-artifact-sha256.txt"
++    cache=$(leap16_r81_report_cache_dir) || return 1
++    if leap16_r81_report_cache_matches; then
++        cp -- "$cache/baseline.txt" "$dir/r64-firmware-baseline.txt" || return 1
++        cp -- "$cache/context.tsv" "$dir/r81-report-context.tsv" || return 1
++    fi
++    snap=${PENDING_TRANSACTION_SNAPSHOT_DIR:-}
++    for file in "$LEAP16_R64_META" source-owned.tsv target-owned.tsv; do
++        [[ ! -f $snap/$file ]] || cp -- "$snap/$file" "$dir/$file" || return 1
++    done
++    printf '%s\n' "$dir"
++}
++
++eval "$(declare -f pending_capture_runtime_diagnostics | sed '1s/pending_capture_runtime_diagnostics/pending_capture_runtime_diagnostics_pre_leap16_r81/')"
++pending_capture_runtime_diagnostics() {
++    if ! leap16_r81_diagnostic_pair; then pending_capture_runtime_diagnostics_pre_leap16_r81 "$@"; return $?; fi
++    local dir
++    dir=$(leap16_capture_diagnostics "${1:-runtime}") || return 1
++    printf '%s\n' "$PENDING_SOURCE_CMDLINE" >"$dir/recorded-source-cmdline.txt" || return 1
++    cat /proc/cmdline >"$dir/runtime-target-cmdline.txt" || return 1
++    efibootmgr -v >"$dir/efibootmgr-runtime-v.txt" 2>&1 || true
++    printf '%s\n' "$dir"
++}
++
++leap16_r64_print_matrix() {
++    cat <<'MATRIX'
++openSUSE Leap 16 bootloader matrix — leap16-r81
++
++Legend:
++  HW-PROVEN       completed automatically on real hardware with exact final topology
++  HW-PENDING      implemented; complete hardware evidence still required
++  —               same-backend; not a cross-loader edge
++
++LIVE SWITCH MATRIX (source rows -> target columns)
++                 GRUB2        Limine       systemd-boot  rEFInd
++  GRUB2          —            HW-PROVEN    HW-PROVEN     HW-PROVEN
++  Limine         HW-PROVEN    —            HW-PROVEN     HW-PROVEN
++  systemd-boot   HW-PROVEN    HW-PROVEN    —             HW-PENDING
++  rEFInd         HW-PROVEN    HW-PENDING   HW-PENDING    —
++
++CROSS-LOADER RESTORE MATRIX (active source -> restored backup target)
++                 GRUB2        Limine       systemd-boot  rEFInd
++  GRUB2          —            HW-PROVEN    HW-PROVEN     HW-PROVEN
++  Limine         HW-PROVEN    —            HW-PROVEN     HW-PENDING
++  systemd-boot   HW-PROVEN    HW-PROVEN    —             HW-PENDING
++  rEFInd         HW-PROVEN    HW-PENDING   HW-PENDING    —
++
++BACKUP BACKENDS
++  GRUB2          HW-PROVEN
++  Limine         HW-PROVEN
++  systemd-boot   HW-PROVEN
++  rEFInd         HW-PROVEN
++
++r81 evidence scope:
++  - The Sep 5 r80 bundle proves Limine -> rEFInd live through direct-kernel proof,
++    automatic source retirement and final BootCurrent/BootOrder 0001.
++  - Its rEFInd -> Limine attempt failed before candidate commit and rolled back.
++  - Neither Limine/rEFInd restore direction has a completion trace in that bundle.
++  - r81 repairs the reverse recovery contract and the pair's diagnostic export;
++    local tests never promote an unproven hardware or restore edge.
++  - GRUB2 <-> rEFInd live and both restores remain HW-PROVEN per the handoff.
++MATRIX
++}
+--- /dev/null
++++ b/tests/fixtures/r81-limine-to-refind-before.txt
+@@ -0,0 +1,7 @@
++BootCurrent: 0000
++Timeout: 1 seconds
++BootOrder: 0000,0003
++Boot0000* openSUSE Limine	HD(1,GPT,81720d70-39ac-4515-a24e-7e00d3b3d438,0x800,0xff000)/File(\EFI\LIMINE\LIMINE_X64.EFI)
++      dp: 04 01 2a 00 01 00 00 00 00 08 00 00 00 00 00 00 00 f0 0f 00 00 00 00 00 70 0d 72 81 ac 39 15 45 a2 4e 7e 00 d3 b3 d4 38 02 02 / 04 04 3a 00 5c 00 45 00 46 00 49 00 5c 00 4c 00 49 00 4d 00 49 00 4e 00 45 00 5c 00 4c 00 49 00 4d 00 49 00 4e 00 45 00 5f 00 58 00 36 00 34 00 2e 00 45 00 46 00 49 00 00 00 / 7f ff 04 00
++Boot0003* UEFI OS	HD(1,GPT,81720d70-39ac-4515-a24e-7e00d3b3d438,0x800,0xff000)/File(\EFI\BOOT\BOOTX64.EFI)
++      dp: 04 01 2a 00 01 00 00 00 00 08 00 00 00 00 00 00 00 f0 0f 00 00 00 00 00 70 0d 72 81 ac 39 15 45 a2 4e 7e 00 d3 b3 d4 38 02 02 / 04 04 30 00 5c 00 45 00 46 00 49 00 5c 00 42 00 4f 00 4f 00 54 00 5c 00 42 00 4f 00 4f 00 54 00 58 00 36 00 34 00 2e 00 45 00 46 00 49 00 00 00 / 7f ff 04 00
+--- /dev/null
++++ b/tests/fixtures/r81-limine-to-refind-final.txt
+@@ -0,0 +1,5 @@
++BootCurrent: 0001
++Timeout: 1 seconds
++BootOrder: 0001
++Boot0001* openSUSE rEFInd	HD(1,GPT,81720d70-39ac-4515-a24e-7e00d3b3d438,0x800,0xff000)/File(\EFI\refind\refind_x64.efi)
++      dp: 04 01 2a 00 01 00 00 00 00 08 00 00 00 00 00 00 00 f0 0f 00 00 00 00 00 70 0d 72 81 ac 39 15 45 a2 4e 7e 00 d3 b3 d4 38 02 02 / 04 04 3a 00 5c 00 45 00 46 00 49 00 5c 00 72 00 65 00 66 00 69 00 6e 00 64 00 5c 00 72 00 65 00 66 00 69 00 6e 00 64 00 5f 00 78 00 36 00 34 00 2e 00 65 00 66 00 69 00 00 00 / 7f ff 04 00
+--- /dev/null
++++ b/tests/fixtures/r81-limine-to-refind-staged.txt
+@@ -0,0 +1,10 @@
++BootNext: 0001
++BootCurrent: 0000
++Timeout: 1 seconds
++BootOrder: 0000,0003,0001
++Boot0000* openSUSE Limine	HD(1,GPT,81720d70-39ac-4515-a24e-7e00d3b3d438,0x800,0xff000)/File(\EFI\LIMINE\LIMINE_X64.EFI)
++      dp: 04 01 2a 00 01 00 00 00 00 08 00 00 00 00 00 00 00 f0 0f 00 00 00 00 00 70 0d 72 81 ac 39 15 45 a2 4e 7e 00 d3 b3 d4 38 02 02 / 04 04 3a 00 5c 00 45 00 46 00 49 00 5c 00 4c 00 49 00 4d 00 49 00 4e 00 45 00 5c 00 4c 00 49 00 4d 00 49 00 4e 00 45 00 5f 00 58 00 36 00 34 00 2e 00 45 00 46 00 49 00 00 00 / 7f ff 04 00
++Boot0001* openSUSE rEFInd	HD(1,GPT,81720d70-39ac-4515-a24e-7e00d3b3d438,0x800,0xff000)/File(\EFI\refind\refind_x64.efi)
++      dp: 04 01 2a 00 01 00 00 00 00 08 00 00 00 00 00 00 00 f0 0f 00 00 00 00 00 70 0d 72 81 ac 39 15 45 a2 4e 7e 00 d3 b3 d4 38 02 02 / 04 04 3a 00 5c 00 45 00 46 00 49 00 5c 00 72 00 65 00 66 00 69 00 6e 00 64 00 5c 00 72 00 65 00 66 00 69 00 6e 00 64 00 5f 00 78 00 36 00 34 00 2e 00 65 00 66 00 69 00 00 00 / 7f ff 04 00
++Boot0003* UEFI OS	HD(1,GPT,81720d70-39ac-4515-a24e-7e00d3b3d438,0x800,0xff000)/File(\EFI\BOOT\BOOTX64.EFI)
++      dp: 04 01 2a 00 01 00 00 00 00 08 00 00 00 00 00 00 00 f0 0f 00 00 00 00 00 70 0d 72 81 ac 39 15 45 a2 4e 7e 00 d3 b3 d4 38 02 02 / 04 04 30 00 5c 00 45 00 46 00 49 00 5c 00 42 00 4f 00 4f 00 54 00 5c 00 42 00 4f 00 4f 00 54 00 58 00 36 00 34 00 2e 00 45 00 46 00 49 00 00 00 / 7f ff 04 00
+--- /dev/null
++++ b/tests/leap16-r81-selftest.sh
+@@ -0,0 +1,294 @@
++#!/usr/bin/env bash
++set -euo pipefail
++ROOT=${R81_TEST_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)}
++fail_test(){ printf 'FAIL: %s\n' "$*" >&2; exit 1; }
++source_effective_stack(){
++    local prelude
++    prelude=$(awk '/^select_target_bootloader\(\)/{exit} {print}' "$ROOT/bootloader-switcher.sh" | sed '/^SCRIPT_DIR=/d')
++    SCRIPT_DIR=$ROOT
++    eval "$prelude"
++}
++
++(
++    source_effective_stack
++    [[ $SWITCHER_RELEASE == leap16-r81 ]] || fail_test 'r81 release not loaded'
++    matrix=$(leap16_r64_print_matrix)
++    [[ $matrix == *'matrix — leap16-r81'* ]] || fail_test 'matrix heading is stale'
++    [[ $matrix == *'Limine         HW-PROVEN    —            HW-PROVEN     HW-PROVEN'* ]] \
++        || fail_test 'observed forward live proof is missing'
++    [[ $matrix == *'Limine         HW-PROVEN    —            HW-PROVEN     HW-PENDING'* ]] \
++        || fail_test 'restore inherited the live proof without its own evidence'
++)
++
++# Real generated menu, real hashes and the effective validator. A finalized
++# rEFInd source has no generic fallback. Staging must create a usable direct
++# recovery item without manufacturing EFI/BOOT or changing the source bytes.
++(
++    source_effective_stack
++    td=$(mktemp -d); trap 'rm -rf -- "$td"' EXIT
++    ESP_MOUNT="$td/esp"; PENDING_ESP_MOUNT=$ESP_MOUNT
++    mkdir -p "$ESP_MOUNT/EFI/refind" "$ESP_MOUNT/EFI/LIMINE"
++    printf MZrefind >"$ESP_MOUNT/EFI/refind/refind_x64.efi"
++    printf MZlimine >"$ESP_MOUNT/EFI/LIMINE/LIMINE_X64.EFI"
++    sudo(){ [[ ${1:-} != -n ]] || shift; command "$@"; }
++    ok(){ :; }; fail(){ printf '%s\n' "$*" >&2; }
++    BOOTLOADER=refind; LEAP16_R64_STAGING=1
++    OLD_FALLBACK_EXISTED=0; OLD_FALLBACK_HASH=''
++    R26_SOURCE_EFI_HASH=$(r21_hash_privileged "$ESP_MOUNT/EFI/refind/refind_x64.efi")
++    cat >"$td/generated.conf" <<'CONF'
++timeout: 5
++/+openSUSE Linux
++  //kernel
++  protocol: linux
++  cmdline: root=UUID=test quiet
++/EFI fallback
++### Shared pre-transfer recovery entry; EFI/BOOT remains native openSUSE until primary Limine proof
++comment: Preserved openSUSE generic fallback / GRUB2 recovery path
++protocol: efi
++path: boot():/EFI/BOOT/BOOTX64.EFI
++CONF
++    cp -- "$td/generated.conf" "$ESP_MOUNT/limine.conf"
++    leap16_r64_patch_limine_pretransfer_comment || fail_test 'pre-transfer menu conversion failed'
++    grep -Fqx 'path: boot():/EFI/refind/refind_x64.efi' "$ESP_MOUNT/limine.conf" \
++        || fail_test 'staged menu still points to the nonexistent EFI/BOOT recovery path'
++    leap16_validate_limine_recovery_contract "$ESP_MOUNT/limine.conf" \
++        || fail_test 'valid direct rEFInd recovery was rejected before candidate commit'
++    [[ ! -e $ESP_MOUNT/EFI/BOOT/BOOTX64.EFI ]] || fail_test 'staging fabricated a generic fallback'
++    [[ $(r21_hash_privileged "$ESP_MOUNT/EFI/refind/refind_x64.efi") == "$R26_SOURCE_EFI_HASH" ]] \
++        || fail_test 'staging changed rEFInd source bytes'
++
++    # Backup restore substitutes a finalized config through this same hook.
++    # The original backup must remain immutable while its staged copy changes.
++    leap16_r81_render_recovery "$td/generated.conf" '/EFI fallback' \
++        'path: boot():/EFI/BOOT/BOOTX64.EFI' fallback "$td/backup.conf"
++    backup_hash=$(sha256sum "$td/backup.conf")
++    cp -- "$td/backup.conf" "$ESP_MOUNT/limine.conf"
++    LEAP16_R31_RESTORE_DIR="$td/backup"
++    leap16_r64_patch_limine_pretransfer_comment || fail_test 'restored menu did not gain direct recovery'
++    leap16_validate_limine_recovery_contract "$ESP_MOUNT/limine.conf" || fail_test 'restored direct recovery failed validation'
++    [[ $(sha256sum "$td/backup.conf") == "$backup_hash" ]] || fail_test 'original backup bytes were edited'
++
++    cp -- "$ESP_MOUNT/limine.conf" "$td/direct.conf"
++    cat "$td/direct.conf" >>"$ESP_MOUNT/limine.conf"
++    ! leap16_validate_limine_recovery_contract "$ESP_MOUNT/limine.conf" || fail_test 'duplicate recovery stanzas passed'
++    cp -- "$td/direct.conf" "$ESP_MOUNT/limine.conf"
++    printf tampered >"$ESP_MOUNT/EFI/refind/refind_x64.efi"
++    ! leap16_validate_limine_recovery_contract "$ESP_MOUNT/limine.conf" || fail_test 'changed rEFInd source bytes passed'
++    printf MZrefind >"$ESP_MOUNT/EFI/refind/refind_x64.efi"
++
++    # An unrelated pre-stage fallback is preserved byte-for-byte before transfer.
++    mkdir -p "$ESP_MOUNT/EFI/BOOT"
++    printf foreign >"$ESP_MOUNT/EFI/BOOT/BOOTX64.EFI"
++    ! leap16_validate_limine_recovery_contract "$ESP_MOUNT/limine.conf" || fail_test 'unexpected fallback appearance passed'
++    OLD_FALLBACK_EXISTED=1; OLD_FALLBACK_HASH=$(r21_hash_privileged "$ESP_MOUNT/EFI/BOOT/BOOTX64.EFI")
++    leap16_validate_limine_recovery_contract "$ESP_MOUNT/limine.conf" || fail_test 'unchanged pre-stage fallback was rejected'
++    printf changed >"$ESP_MOUNT/EFI/BOOT/BOOTX64.EFI"
++    ! leap16_validate_limine_recovery_contract "$ESP_MOUNT/limine.conf" || fail_test 'changed pre-stage fallback passed'
++    rm -- "$ESP_MOUNT/EFI/BOOT/BOOTX64.EFI"
++
++    # A fresh process reconstructs primary/transfer state from the pending
++    # record and metadata, without the staging flag or inherited proof history.
++    LEAP16_R64_STAGING=0; PENDING_FORMAT=$R26_PENDING_FORMAT
++    PENDING_SOURCE=refind; PENDING_TARGET=limine; PENDING_PHASE=boot-armed
++    PENDING_SOURCE_EFI_HASH=$R26_SOURCE_EFI_HASH
++    PENDING_TARGET_EFI_HASH=$(r21_hash_privileged "$ESP_MOUNT/EFI/LIMINE/LIMINE_X64.EFI")
++    PENDING_TARGET_BOOT_ID=0000; PENDING_OLD_BOOT_ID=0001
++    PENDING_OLD_FALLBACK_EXISTED=0; PENDING_OLD_FALLBACK_HASH=''
++    PENDING_TRANSACTION_SNAPSHOT_DIR="$td/snapshot"; mkdir -p "$PENDING_TRANSACTION_SNAPSHOT_DIR"
++    primary_hash=$(r21_hash_privileged "$ESP_MOUNT/limine.conf")
++    leap16_r64_write_meta refind:limine '' "$primary_hash"
++    leap16_validate_limine_recovery_contract "$ESP_MOUNT/limine.conf" || fail_test 'pending primary recovery contract failed'
++    transferred=$(leap16_r64_rewrite_limine_recovery_to_refind)
++    [[ $transferred == "$primary_hash" ]] || fail_test 'transfer unnecessarily changed direct recovery bytes'
++    cmp -s "$(leap16_r64_limine_preconf_path)" "$ESP_MOUNT/limine.conf" || fail_test 'primary rollback copy is not exact'
++    cp -- "$ESP_MOUNT/EFI/LIMINE/LIMINE_X64.EFI" "$ESP_MOUNT/EFI/BOOT/BOOTX64.EFI"
++    leap16_r64_update_limine_fallback_meta 0002 "$PENDING_TARGET_EFI_HASH" "$transferred"
++    PENDING_PHASE=runtime-validated; BOOT_CURRENT=0000
++    leap16_validate_limine_recovery_contract "$ESP_MOUNT/limine.conf" || fail_test 'valid transferred recovery contract failed'
++    ! leap16_r64_remove_limine_refind_recovery_block || fail_test 'menu finalized outside the two-proof finalizer'
++    LEAP16_R81_FINAL_MENU_AUTHORIZED=1
++    final_hash=$(leap16_r64_remove_limine_refind_recovery_block)
++    ! leap16_validate_limine_recovery_contract "$ESP_MOUNT/limine.conf" || fail_test 'primary BootCurrent earned final fallback acceptance'
++    BOOT_CURRENT=0002
++    leap16_validate_limine_recovery_contract "$ESP_MOUNT/limine.conf" || fail_test 'valid second-proof final menu failed'
++    leap16_r81_recovery_block_present "$ESP_MOUNT/limine.conf" fallback || fail_test 'visible finalized fallback is missing'
++    [[ $(r21_hash_privileged "$ESP_MOUNT/limine.conf") == "$final_hash" ]] || fail_test 'final hash stdout was contaminated'
++    ! grep -Fq '/openSUSE rEFInd recovery' "$ESP_MOUNT/limine.conf" || fail_test 'temporary rEFInd recovery survived final rendering'
++    LEAP16_R81_FINAL_MENU_AUTHORIZED=0
++    ! leap16_validate_limine_recovery_contract "$ESP_MOUNT/limine.conf" || fail_test 'final config self-authorized outside finalization'
++)
++
++# The actual r80 finalizer must stop before any alias/config/source mutation
++# when the independent fallback proof fails, for both live and restored targets.
++for provenance in '' /validated/limine-backup; do
++    (
++        source_effective_stack
++        PENDING_SOURCE=refind; PENDING_TARGET=limine; PENDING_TARGET_BOOT_ID=0000
++        PENDING_BACKUP_PATH=$provenance; trace=''
++        leap16_r64_validate_limine_fallback_runtime(){ trace+=' proof-failed'; return 1; }
++        leap16_r80_normalize_limine_aliases_after_fallback_proof(){ trace+=' MUTATION'; }
++        leap16_r64_remove_limine_refind_recovery_block(){ trace+=' MUTATION'; }
++        leap16_r64_delete_refind_source(){ trace+=' MUTATION'; }
++        ! leap16_r64_retire_refind_after_limine_fallback_proof || fail_test 'failed proof was accepted'
++        [[ $trace == ' proof-failed' ]] || fail_test "mutation preceded independent fallback proof ($trace)"
++    )
++done
++
++# Replay the provided before/staged/final firmware dumps, then remove private
++# state exactly as finalization does. The report cache must survive that removal
++# but must never cross transaction boundaries or hide real source/ESP drift.
++(
++    source_effective_stack
++    td=$(mktemp -d); trap 'rm -rf -- "$td"' EXIT
++    PENDING_SOURCE=limine; PENDING_TARGET=refind; PENDING_FORMAT=$R26_PENDING_FORMAT
++    PENDING_TARGET_BOOT_ID=0001; PENDING_OLD_BOOT_ID=0000; PENDING_PHASE=boot-armed
++    PENDING_ORIGINAL_BOOT_ORDER=0000,0003
++    PENDING_TRANSACTION_SNAPSHOT_DIR="$td/snapshot"; LEAP16_DIAGNOSTIC_ROOT="$td/diagnostics"
++    mkdir -p "$PENDING_TRANSACTION_SNAPSHOT_DIR" "$LEAP16_DIAGNOSTIC_ROOT"
++    cp "$ROOT/tests/fixtures/r81-limine-to-refind-before.txt" "$PENDING_TRANSACTION_SNAPSHOT_DIR/$LEAP16_R64_FIRMWARE_BASELINE"
++    leap16_r80_transaction_partuuid(){ printf '81720d70-39ac-4515-a24e-7e00d3b3d438\n'; }
++    efibootmgr(){ cat -- "$td/current"; }
++    cp "$ROOT/tests/fixtures/r81-limine-to-refind-staged.txt" "$td/current"
++    leap16_r81_cache_report_context || fail_test 'report context could not be cached'
++    leap16_write_firmware_order_report "$td/report" runtime
++    grep -Fxq 'assessment=pass' "$td/report" || fail_test "valid staged firmware report failed: $(cat "$td/report")"
++    PENDING_PHASE=runtime-validated
++    cp "$ROOT/tests/fixtures/r81-limine-to-refind-final.txt" "$td/current"
++    leap16_write_firmware_order_report "$td/report" finalized-refind-from-limine
++    grep -Fxq 'assessment=pass' "$td/report" || fail_test "real finalized rEFInd firmware report failed: $(cat "$td/report")"
++    rm -rf -- "$PENDING_TRANSACTION_SNAPSHOT_DIR"
++    leap16_write_firmware_order_report "$td/report" auto-resume-pass
++    grep -Fxq 'assessment=pass' "$td/report" || fail_test 'final report lost its baseline after snapshot removal'
++    cp "$ROOT/tests/fixtures/r81-limine-to-refind-staged.txt" "$td/current"
++    leap16_write_firmware_order_report "$td/report" auto-resume-pass
++    grep -Fxq 'assessment=fail' "$td/report" || fail_test 'remaining source aliases passed as finalized'
++    cp "$ROOT/tests/fixtures/r81-limine-to-refind-final.txt" "$td/current"
++    sed -i 's/81720d70-39ac-4515-a24e-7e00d3b3d438/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/g' "$td/current"
++    leap16_write_firmware_order_report "$td/report" auto-resume-pass
++    grep -Fxq 'assessment=fail' "$td/report" || fail_test 'target on wrong ESP passed'
++    cp "$ROOT/tests/fixtures/r81-limine-to-refind-final.txt" "$td/current"
++    PENDING_TRANSACTION_SNAPSHOT_DIR="$td/another-transaction"
++    leap16_write_firmware_order_report "$td/report" auto-resume-pass
++    grep -Fxq 'assessment=fail' "$td/report" || fail_test 'cache from another transaction was accepted'
++)
++
++# Every rEFInd-target checkpoint must use the Leap collector instead of the
++# historical generic CachyOS fallback directory, and return its usable path.
++(
++    source_effective_stack
++    td=$(mktemp -d); trap 'rm -rf -- "$td"' EXIT
++    PENDING_SOURCE=limine; PENDING_TARGET=refind; PENDING_SOURCE_CMDLINE='root=UUID=test quiet'
++    leap16_capture_diagnostics(){ mkdir -p "$td/leap/$1"; printf '%s/leap/%s\n' "$td" "$1"; }
++    pending_capture_runtime_diagnostics_pre_leap16_r81(){ fail_test 'rEFInd checkpoint used the legacy capture fallback'; }
++    efibootmgr(){ printf 'BootCurrent: 0001\n'; }
++    out=$(pending_capture_runtime_diagnostics runtime)
++    [[ $out == "$td/leap/runtime" && -s $out/recorded-source-cmdline.txt && -s $out/efibootmgr-runtime-v.txt ]] \
++        || fail_test 'rEFInd checkpoint was not exported with its runtime evidence'
++)
++# Reverse reports distinguish candidate, transferred and fallback-proven final
++# topology. A primary boot or duplicate fallback cannot pass the final report.
++(
++    source_effective_stack
++    td=$(mktemp -d); trap 'rm -rf -- "$td"' EXIT
++    PENDING_SOURCE=refind; PENDING_TARGET=limine; PENDING_FORMAT=$R26_PENDING_FORMAT
++    PENDING_TARGET_BOOT_ID=0000; PENDING_OLD_BOOT_ID=0001; PENDING_PHASE=boot-armed
++    PENDING_ORIGINAL_BOOT_ORDER=0001
++    PENDING_TRANSACTION_SNAPSHOT_DIR="$td/snapshot"; LEAP16_DIAGNOSTIC_ROOT="$td/diagnostics"
++    mkdir -p "$PENDING_TRANSACTION_SNAPSHOT_DIR" "$LEAP16_DIAGNOSTIC_ROOT"
++    cp "$ROOT/tests/fixtures/r81-limine-to-refind-final.txt" "$PENDING_TRANSACTION_SNAPSHOT_DIR/$LEAP16_R64_FIRMWARE_BASELINE"
++    TEST_PARTUUID=81720d70-39ac-4515-a24e-7e00d3b3d438
++    leap16_r80_transaction_partuuid(){ printf '%s\n' "$TEST_PARTUUID"; }
++    efibootmgr(){ cat -- "$td/current"; }
++    write_current(){
++        printf 'BootCurrent: %s\nBootOrder: %s\n' "$1" "$2" >"$td/current"
++        printf 'Boot0000* Limine HD(1,GPT,%s,0x800,0xff000)/File(\\EFI\\LIMINE\\LIMINE_X64.EFI)\n' "$TEST_PARTUUID" >>"$td/current"
++        if [[ $3 == source ]]; then
++            printf 'Boot0001* rEFInd HD(1,GPT,%s,0x800,0xff000)/File(\\EFI\\refind\\refind_x64.efi)\n' "$TEST_PARTUUID" >>"$td/current"
++        fi
++        if [[ $4 == fallback ]]; then
++            printf 'Boot0002* UEFI OS HD(1,GPT,%s,0x800,0xff000)/File(\\EFI\\BOOT\\BOOTX64.EFI)\n' "$TEST_PARTUUID" >>"$td/current"
++        fi
++        return 0
++    }
++    write_current 0000 0001,0000 source none
++    leap16_r81_cache_report_context
++    leap16_write_firmware_order_report "$td/report" runtime-pass-limine-from-refind
++    grep -Fxq 'assessment=pass' "$td/report" || fail_test "reverse candidate report failed: $(cat "$td/report")"
++    leap16_r64_write_meta refind:limine '' "$(printf '%064d' 1)" 0002 "$(printf '%064d' 2)" "$(printf '%064d' 1)"
++    PENDING_PHASE=runtime-validated
++    write_current 0000 0000,0002,0001 source fallback
++    leap16_r81_cache_report_context
++    leap16_write_firmware_order_report "$td/report" fallback-armed-limine-from-refind
++    grep -Fxq 'assessment=pass' "$td/report" || fail_test 'transferred reverse report failed'
++    write_current 0002 0000,0002 retired fallback
++    leap16_write_firmware_order_report "$td/report" finalized-limine-from-refind
++    grep -Fxq 'assessment=pass' "$td/report" || fail_test "reverse final report failed: $(cat "$td/report")"
++    write_current 0000 0000,0002 retired fallback
++    leap16_write_firmware_order_report "$td/report" finalized-limine-from-refind
++    grep -Fxq 'assessment=fail' "$td/report" || fail_test 'primary BootCurrent passed reverse final report'
++    write_current 0002 0000,0002 retired fallback
++    printf 'Boot0003* duplicate HD(1,GPT,%s,0x800,0xff000)/File(\\EFI\\BOOT\\BOOTX64.EFI)\n' "$TEST_PARTUUID" >>"$td/current"
++    leap16_write_firmware_order_report "$td/report" finalized-limine-from-refind
++    grep -Fxq 'assessment=fail' "$td/report" || fail_test 'parked duplicate fallback passed final report'
++    write_current 0002 0000,0002 retired fallback
++    : >"$(leap16_r81_report_cache_dir)/baseline.txt"
++    leap16_write_firmware_order_report "$td/report" auto-resume-pass
++    grep -Fxq 'assessment=fail' "$td/report" || fail_test 'empty cached baseline passed final report'
++)
++
++# Firmware can re-synthesize one wave of the same numeric alias after a
++# successful deletion. Unlimited churn, failed deletion and baseline-ID reuse
++# must stop with the source untouched and a bounded number of firmware writes.
++for scenario in once forever delete_error collision changed_after_order enum_error; do
++    (
++        source_effective_stack
++        PENDING_SOURCE=refind; PENDING_TARGET=limine; PENDING_PHASE=runtime-validated
++        PENDING_TARGET_BOOT_ID=0002; PENDING_OLD_BOOT_ID=0000; BOOT_CURRENT=0004
++        MOCK_PRIMARY='0002 0005'; MOCK_FALLBACK='0004'; MOCK_ORDER='0002,0004,0000,0005,0007'
++        deletes=0; writes=0; identity_changed=0
++        leap16_r80_require_baseline(){ return 0; }
++        leap16_r64_limine_fallback_staged(){ return 0; }
++        leap16_r64_limine_fallback_id(){ printf '0004\n'; }
++        leap16_r80_id_existed_in_baseline(){ [[ $scenario == collision && $1 == 0005 ]]; }
++        leap16_nvram_entry_matches_current_esp(){ [[ $identity_changed == 0 || $1 != 0005 ]]; }
++        nvram_id_matches_path(){ [[ $identity_changed == 0 || $1 != 0005 ]]; }
++        leap16_r80_current_ids_for_path(){
++            [[ $scenario != enum_error ]] || return 1
++            if [[ $1 == "$LEAP16_R80_LIMINE_PRIMARY_PATH" ]]; then printf '%s\n' $MOCK_PRIMARY; else printf '%s\n' $MOCK_FALLBACK; fi
++        }
++        boot_id_exists(){ case " $MOCK_PRIMARY $MOCK_FALLBACK 0000 0007 " in *" $1 "*) return 0;; *) return 1;; esac; }
++        leap16_current_boot_order(){ printf '%s\n' "$MOCK_ORDER"; }
++        sudo(){
++            [[ $1 == efibootmgr ]] || fail_test 'unexpected external mutation'
++            shift
++            if [[ $1 == -o ]]; then
++                MOCK_ORDER=$2; writes=$((writes+1))
++                [[ $scenario != changed_after_order ]] || identity_changed=1
++                return 0
++            fi
++            [[ $1 == -b && $2 == 0005 && $3 == -B ]] || fail_test 'deleted an unowned firmware identity'
++            ! leap16_order_has_id "$MOCK_ORDER" 0005 || fail_test 'deleted alias before removing it from BootOrder'
++            deletes=$((deletes+1))
++            [[ $scenario != delete_error ]] || return 1
++            MOCK_PRIMARY=0002
++            if [[ $scenario == forever || ( $scenario == once && $deletes == 1 ) ]]; then
++                MOCK_PRIMARY='0002 0005'; MOCK_ORDER="$MOCK_ORDER,0005"
++            fi
++            return 0
++        }
++        ok(){ :; }; fail(){ :; }
++        if [[ $scenario == once ]]; then
++            leap16_r80_normalize_limine_aliases_after_fallback_proof || fail_test 'one alias re-synthesis wave did not converge'
++            [[ $deletes == 2 && $MOCK_PRIMARY == 0002 && $MOCK_ORDER == 0002,0004,0000,0007 ]] \
++                || fail_test 'bounded normalization lost recovery or unrelated entries'
++        else
++            ! leap16_r80_normalize_limine_aliases_after_fallback_proof || fail_test "unsafe alias scenario passed: $scenario"
++            ((deletes<=2 && writes<=2)) || fail_test 'alias cleanup exceeded its fixed pass budget'
++            if [[ $scenario == collision || $scenario == enum_error ]]; then
++                [[ $deletes == 0 && $writes == 0 ]] || fail_test 'mutation preceded complete ownership classification'
++            fi
++            [[ $scenario != changed_after_order || $deletes == 0 ]] || fail_test 'alias was deleted after its identity changed'
++        fi
++    )
++done
++printf 'leap16-r81 selftest: PASS\n'

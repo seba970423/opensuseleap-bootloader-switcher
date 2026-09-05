@@ -1,0 +1,63 @@
+openSUSE Bootloader Switcher — leap16-r82 local test report
+
+INPUTS
+  opensuse-bootloader-switcher-r81.tar(1).gz
+  20260905-2.tar.gz
+
+HARDWARE DIAGNOSIS REPLAYED
+  - r81 canonical Limine Boot0000 runtime proof: PASS.
+  - rEFInd Boot0001 passive recovery/deep validation: PASS.
+  - last captured pre-promotion BootOrder: 0001,0000.
+  - EFI/BOOT/BOOTX64.EFI at last checkpoint: ABSENT.
+  - Limine fallback Boot#### alias at last checkpoint: ABSENT.
+  - pending phase: runtime-validated.
+  - r81 automatic resume failure reproduced in code review at the exact
+    source-dropping generic promotion call before fallback transfer.
+
+R82 CHANGE
+  leap16_r64_promote_and_stage_limine_fallback() now uses
+  r21_order_primary_then_source_recovery() and requires exact target,source
+  before any EFI/BOOT transfer. The rest of the r81/r80 two-proof and
+  ownership-gated finalization stack is unchanged.
+
+RESULTS
+  Bash parse checks: PASS, 167 scripts.
+  r82 focused effective-stack selftest: PASS.
+  r81 behavioral regression against effective r82 stack: PASS.
+  r80 ownership/alias regression against effective r82 stack: PASS.
+  r79 parked-direct/ownership regression against effective r82 stack: PASS.
+
+FOCUSED R82 COVERAGE
+  - Effective reverse promotion function contains the dedicated
+    primary+source recovery helper and no adapter_target_promote call.
+  - Starting BootOrder 0001,0000 converges to 0000,0001 before fallback write.
+  - Exact plausible r81 stranded BootOrder 0000 also converges to 0000,0001
+    before fallback write.
+  - Fallback transfer/alias/order/BootNext simulation reaches
+    0000,0002,0001 with BootNext=0002.
+  - Failed primary/source runtime validation performs zero ordering writes.
+  - Reverse live/restore matrix entries remain HW-PENDING; local simulation
+    cannot certify the independent fallback proof or either restore direction.
+
+REGRESSION NOTE
+  tests/selftest.sh was also started against r82. Its generic historical suite
+  passed through the inherited r25 blocks, then intentionally stopped on a
+  revision-pinned user-visible release audit that expects an old r25-era main
+  script. That static historical assertion is not modified or counted as an
+  r82 behavioral failure. Revision-specific r79/r80/r81 compatibility runners
+  were instead executed with only their exact release-string assertions adapted;
+  their behavioral bodies and expectations were unchanged.
+
+HARDWARE STATUS
+  Limine -> rEFInd live remains HW-PROVEN from the earlier Sep 5 transaction.
+  rEFInd -> Limine has proof #1 only; proof #2 was never armed by r81.
+  Limine <-> rEFInd restore directions remain HW-PENDING.
+  GRUB2 <-> rEFInd live and both restore directions remain HW-PROVEN per the
+  existing handoff/evidence ledger.
+
+NEXT HARDWARE ACTION
+  Use r82 against the existing pending transaction. From canonical Limine,
+  --manage-staged should show runtime-validated rEFInd -> Limine with no fallback
+  staged. Choose the normal "Promote Limine + stage EFI/BOOT proof #2" action.
+  r82 must first establish BootOrder target,source, then arm the fallback proof.
+  No manual BootOrder/BootNext/EFI cleanup is part of the accepted path.
